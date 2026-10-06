@@ -1,6 +1,9 @@
 ---
 name: verify-change
 description: Use when implementing or changing behavior to choose and run a reproducible user-facing verification path, inspect its side effects, and report evidence and limits.
+problem: A passing substitute check or unsupported claim fails to establish changed user-visible behavior.
+use_when: Implementing or changing behavior that needs observable verification and an honest evidence report.
+when_to_run: After identifying the changed behavior and before claiming completion.
 ---
 
 # Verify a change

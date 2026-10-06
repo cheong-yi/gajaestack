@@ -1,6 +1,9 @@
 ---
 name: type-discipline
 description: Use when adding or changing types, state models, identifiers, or data boundaries; choose the smallest representation that makes meaningful invalid states difficult to express.
+problem: Ambiguous or unvalidated values allow invalid states to cross domain boundaries.
+use_when: Changing type boundaries, state models, identifiers, or external-input validation.
+when_to_run: During design and implementation of a change whose correctness depends on represented states or validated inputs.
 ---
 
 # Type discipline

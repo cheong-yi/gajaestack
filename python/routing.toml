@@ -1,0 +1,38 @@
+# RERG-shaped example, not consumer adoption. Native bindings require separate selection.
+required = ["pytest", "ruff-check"]
+advisory = ["ruff-format", "mypy"]
+on_demand = ["mutation-testing", "profiling", "adversarial-review"]
+
+[conditional]
+input_parsing = "Changed parsing of externally supplied values: exercise valid, malformed, and boundary inputs."
+authorization_decisions = "Changed a decision about permission, eligibility, or authority: test allow and deny boundaries."
+file_writes_deletion = "Changed filesystem mutation behavior: test target confinement, refusal cases, and no partial side effects."
+external_commands = "Changed subprocess or executable invocation: test arguments, failures, and prohibited execution paths."
+
+[fact]
+# Consumer facts schema: schema_version must be declared; missing or unsupported
+# schema values are reported for consumer action and never rewritten automatically.
+schema_version = 1
+# Facts never install assets or edit native configuration. Binding plugins
+# validate explicit selections when loaded by the consumer's native configuration.
+selected_components = ["mypy", "routing", "ruff"]
+python_version = "3.12"
+test_command = "python -m pytest"
+ruff_command = "python .gajaestack/scripts/check_changed_python.py"
+affected_test_command = "python -m pytest tests/rerg/test_percent_decoder.py"
+ruff_format_command = "ruff format --check --config .gajaestack/python-trial/ruff.toml rerg/raw_derivation.py tests/rerg/test_percent_decoder.py"
+mypy_command = "mypy --config-file .gajaestack/python-trial/mypy.ini"
+ci_jobs_added = false
+pcd_is_enforcement = false
+# To bind Ruff before pytest, separately select guard + ruff + required-ruff,
+# declare required_ruff_before_pytest = "active", supply [python] prerequisites,
+# and explicitly adopt the native pytest configuration documented in the guide.
+# Neither guard nor binding is selected in this example.
+
+[python]
+schema_version = 1
+python_version = "3.12"
+imports = []
+executables = []
+ruff_paths = ["rerg/raw_derivation.py", "tests/rerg/test_percent_decoder.py"]
+ruff_config = ".gajaestack/python-trial/ruff.toml"

@@ -1,6 +1,9 @@
 ---
 name: native-quality
 description: Choose and apply the repository's suitable native formatter, linter, compiler, validator, and focused tests without imposing a tool migration.
+problem: Changes miss useful native checks or introduce unnecessary tool migration and enforcement claims.
+use_when: Selecting checks or focused regression tests for a repository change.
+when_to_run: Before choosing verification commands and when reporting their enforcement status.
 ---
 
 # Native quality checks
@@ -14,4 +17,4 @@ Use this skill when selecting or running mechanical repository checks.
 - For a failure fix, add a focused regression case at the layer that catches the defect. Include a meaningful failing/invalid input control; a passing example alone does not prove the check detects the problem.
 - Report exact commands, observed exit/status, exercised paths and remaining unverified scope. A narrow pass is not whole-repository or host support.
 
-This repository's local `python scripts/check_repo.py` check validates bundled-skill metadata and local Markdown link targets. It is a project-local safeguard, not a consumer toolchain or a universal runner.
+This repository's local `python3 scripts/check_repo.py` validates bundled-skill metadata, routing facts and local Markdown links. The [selectable native checks](../../docs/python-trial.md) provide scoped full/quick Ruff, early pytest prerequisites and separately bound required Ruff, plus Bun-hosted tsc/Biome and a separate test preload. Consumer native configuration and explicit selections activate those boundaries; copying assets or installing guidance does not. Mypy/format remain advisory; deeper review and hotspot work stay on-demand.
