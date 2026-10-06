@@ -1,15 +1,26 @@
 #!/usr/bin/env python3
-"""Preview, adopt, update, or safely remove selected gajaestack source assets.
+"""List selectable components, or preview/adopt/update/remove selected gajaestack source assets.
 
+``list`` needs no consumer root: it names every component with its purpose,
+prerequisites, managed destinations, whether it is guidance or an
+executable/activation, its runtime prerequisites, and the activation steps a
+consumer must perform for enforcement. ``adopt`` takes explicit positional
+component names plus ``--root``; empty, duplicate, or unknown selections are
+refused and selections are never expanded implicitly, so prerequisites must be
+named yourself.
 Shared assets (Ruff, mypy, Hypothesis) are governed by a strict per-asset
 source/version/hash record at ``.gajaestack/ownership.json``; identical
 current kit bytes never imply ownership, and unclaimed files require an
 explicitly reviewed source/version/hash inventory entry. The ``routing``
 component manages only a delimited, version/hash-stamped addendum span in the
-consumer's root ``AGENTS.md`` (never the file itself) and creates
-``.gajaestack/routing.toml`` facts only when absent, validating existing
+consumer's root ``AGENTS.md`` (never the file itself) and validates existing
 facts through the repository policy validator without rewriting them.
-Unrelated bytes are preserved throughout.
+``--facts-template python|typescript`` creates ``.gajaestack/routing.toml``
+only when facts are absent, from a complete schema-valid example; it never
+infers a language, overwrites or merges existing facts, and never satisfies
+the prior-reviewed-facts check that binding adoption requires.
+Preview reports each change's content, source, and destination; ``--apply``
+replans against current state. Unrelated bytes are preserved throughout.
 """
 
 from __future__ import annotations
@@ -68,6 +79,149 @@ DEPENDENCIES = {
     "typescript-guard": ("typescript",),
     "required-ruff": ("guard", "ruff"),
 }
+# The Python preset is the kit's checked RERG-shaped example (never selecting
+# a binding); the TypeScript example is complete and schema-valid, and neither
+# template may select a binding so template creation can never satisfy the
+# prior-reviewed-facts binding check.
+FACTS_TEMPLATE_NAMES = ("python", "typescript")
+TYPESCRIPT_FACTS_TEMPLATE = b"""# Complete schema-valid TypeScript example for consumer review; a template
+# example is a starting point, not truth. Facts are never rewritten.
+required = ["ts-test", "ts-typecheck", "ts-lint"]
+advisory = []
+on_demand = ["mutation-testing", "profiling", "adversarial-review"]
+
+[conditional]
+input_parsing = "Changed parsing of externally supplied values: exercise valid, malformed, and boundary inputs."
+authorization_decisions = "Changed a decision about permission, eligibility, or authority: test allow and deny boundaries."
+file_writes_deletion = "Changed filesystem mutation behavior: test target confinement, refusal cases, and no partial side effects."
+external_commands = "Changed subprocess or executable invocation: test arguments, failures, and prohibited execution paths."
+
+[fact]
+schema_version = 1
+selected_components = ["routing", "typescript"]
+test_command = "bun test"
+affected_test_command = "bun .gajaestack/typescript/check.ts --quick"
+ci_jobs_added = false
+pcd_is_enforcement = false
+
+[typescript]
+schema_version = 1
+typecheck = true
+lint = true
+tsconfig = "tsconfig.json"
+biome_config = "biome.json"
+paths = ["src"]
+"""
+
+COMPONENT_PURPOSES: dict[str, str] = {
+    "guard": "early pytest prerequisite guard plugin; no Ruff dependency",
+    "required-ruff": "binds the full Ruff check before pytest collection",
+    "ruff": "shared Ruff config plus changed-file helper for quick/full scoped lint",
+    "mypy": "advisory mypy configuration with a RERG-shaped scope",
+    "hypothesis": "separately selected property-based test example",
+    "typescript": "Bun-hosted native tsc and Biome check script",
+    "typescript-guard": "Bun test preload binding for the selected type/lint checks",
+    "typescript-config": "optional tsconfig baseline to extend; never replaces a root tsconfig",
+    "routing": (
+        "delimited root AGENTS.md soft-guidance addendum; validates existing facts "
+        "without creating or rewriting them (create absent facts explicitly with "
+        "--facts-template python|typescript)"
+    ),
+}
+COMPONENT_KINDS: dict[str, str] = {
+    "guard": "executable",
+    "required-ruff": "activation",
+    "ruff": "executable",
+    "mypy": "executable",
+    "hypothesis": "executable",
+    "typescript": "executable",
+    "typescript-guard": "activation",
+    "typescript-config": "guidance",
+    "routing": "guidance",
+}
+# Runtime prerequisites and activation requirements are listed separately from
+# component dependencies: adoption copies bytes, while enforcement always needs
+# the consumer's native configuration and reviewed facts. Config-only and
+# guidance components never imply executable enforcement.
+COMPONENT_RUNTIME: dict[str, str] = {
+    "guard": (
+        "Python 3.11+ on the adoption host; the consumer's selected Python "
+        "interpreter (3.11+) and pytest"
+    ),
+    "required-ruff": (
+        "the guard runtime plus the Ruff tool installed in the consumer environment"
+    ),
+    "ruff": (
+        "Python 3.11+ for the consumer helper; the Ruff tool installed in the "
+        "consumer environment"
+    ),
+    "mypy": "the mypy tool installed in the consumer environment",
+    "hypothesis": (
+        "pytest plus the hypothesis property-test dependency in the consumer environment"
+    ),
+    "typescript": (
+        "Bun plus local node_modules tsc (only when typechecking is selected) "
+        "and Biome (only when linting is selected); no Python runtime after adoption"
+    ),
+    "typescript-guard": (
+        "Bun plus local node_modules tsc (only when typechecking is selected) "
+        "and Biome (only when linting is selected)"
+    ),
+    "typescript-config": (
+        "none executed at adoption; a consumer tsc configuration must reference it"
+    ),
+    "routing": (
+        "Python 3.11+ on the adoption host to run adoption; the addendum itself "
+        "needs no runtime"
+    ),
+}
+COMPONENT_ACTIVATION: dict[str, str] = {
+    "guard": (
+        "adopts bytes only; enforces nothing until the consumer's pytest configuration "
+        "merges 'pythonpath = .gajaestack/python' and '-p pytest_guard', disables "
+        "cacheprovider with '-p no:cacheprovider', uses no-bytecode Python (-B), "
+        "and reviewed facts select 'guard'; preserve existing paths/plugins/options"
+    ),
+    "required-ruff": (
+        "adopts bytes only; enforcement needs the separate '-p pytest_required_ruff' "
+        "plugin entry plus prior reviewed facts selecting 'required-ruff' with "
+        "required_ruff_before_pytest = 'active' and 'ruff-check' in required (the "
+        "same facts must select 'guard' and 'ruff')"
+    ),
+    "ruff": (
+        "config and changed-file helper run only when invoked "
+        "(python .gajaestack/scripts/check_changed_python.py [--full]); adoption "
+        "installs no lint enforcement"
+    ),
+    "mypy": (
+        "config-only and advisory: adoption enforces nothing; invoke "
+        "mypy --config-file .gajaestack/python-trial/mypy.ini explicitly"
+    ),
+    "hypothesis": (
+        "selected property test: runs only through the consumer's test invocation "
+        "once the hypothesis dependency is provisioned; never auto-run"
+    ),
+    "typescript": (
+        "check script runs only when invoked via Bun "
+        "(bun .gajaestack/typescript/check.ts [--quick]); existing native "
+        "configurations stay authoritative"
+    ),
+    "typescript-guard": (
+        "activation needs the Bun test preload ([test] preload with "
+        "./.gajaestack/typescript/preload.ts merged into bunfig.toml as a separately "
+        "reviewed consumer change) plus prior reviewed facts selecting "
+        "'typescript-guard'"
+    ),
+    "typescript-config": (
+        "config-only baseline: adoption copies bytes and executes or enforces "
+        "nothing; extend only a consumer configuration that references it"
+    ),
+    "routing": (
+        "soft guidance only: the AGENTS.md addendum is not enforcement and facts are "
+        "the consumer's authority (validated, never rewritten); create absent facts "
+        "explicitly with --facts-template python|typescript"
+    ),
+}
 
 KNOWN_SOURCES: dict[str, str] = {
     destination.as_posix(): source.as_posix()
@@ -95,6 +249,7 @@ class Change:
     content: bytes | None  # ``None`` removes the destination file.
     action: str
     exclusive: bool = False
+    source: str = ""  # provenance shown by preview for review
 
 
 def _read_kit(source_relative: Path) -> bytes:
@@ -348,16 +503,77 @@ def _span_bytes(body: bytes) -> bytes:
     return header.encode("ascii") + body + ADDENDUM_END_LINE + b"\n"
 
 
-def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[Change]:
+def _facts_template_content(name: str) -> bytes:
+    if name == "python":
+        return _read_kit(FACTS_SOURCE)
+    if name == "typescript":
+        return TYPESCRIPT_FACTS_TEMPLATE
+    raise AdoptionError(
+        f"unknown facts template: {name!r}; choose " + " or ".join(FACTS_TEMPLATE_NAMES)
+    )
+
+
+def _facts_template_source(name: str) -> str:
+    if name == "python":
+        return FACTS_SOURCE.as_posix()
+    return f"scripts/gajaestack.py {name} facts template"
+
+
+def prepare(
+    root: Path,
+    components: list[str],
+    *,
+    remove: bool = False,
+    facts_template: str | None = None,
+) -> list[Change]:
+    if not components:
+        raise AdoptionError(
+            "no components selected; name the components explicitly (see 'list'); "
+            "selections are never expanded implicitly"
+        )
     unknown = sorted(set(components) - set(COMPONENTS))
     if unknown:
         raise AdoptionError(f"unknown component(s): {', '.join(unknown)}")
     if len(components) != len(set(components)):
         raise AdoptionError("components must not be repeated")
+    if facts_template is not None and facts_template not in FACTS_TEMPLATE_NAMES:
+        raise AdoptionError(
+            f"unknown facts template: {facts_template!r}; choose "
+            + " or ".join(FACTS_TEMPLATE_NAMES)
+        )
+    if facts_template is not None and remove:
+        raise AdoptionError(
+            "--facts-template cannot be combined with --remove; removal never "
+            "creates or deletes facts"
+        )
 
     root = _resolve_root(root)
+    template_content: bytes | None = None
+    if facts_template is not None:
+        template_facts = root / FACTS_DESTINATION
+        _check_destination(root, template_facts)
+        _require_file_destination(template_facts)
+        if template_facts.exists():
+            raise AdoptionError(
+                f"refusing to overwrite existing facts at {template_facts}; "
+                "--facts-template writes facts only when they are absent (existing "
+                "facts are never overwritten or merged)"
+            )
+        template_content = _facts_template_content(facts_template)
+    # Bindings validate the facts that exist NOW: template creation planned in
+    # this run can never satisfy the prior-reviewed-facts binding check.
     _check_bindings(root, components, remove=remove)
     changes: list[Change] = []
+    if facts_template is not None and template_content is not None:
+        changes.append(
+            Change(
+                root / FACTS_DESTINATION,
+                template_content,
+                "adopt",
+                exclusive=True,
+                source=_facts_template_source(facts_template),
+            )
+        )
     ownership: dict[str, dict[str, str]] | None = None
     original: dict[str, dict[str, str]] | None = None
     record_exists = False
@@ -385,7 +601,14 @@ def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[
                             raise AdoptionError(
                                 f"refusing to remove locally changed file: {destination}"
                             )
-                        changes.append(Change(destination, None, "remove"))
+                        changes.append(
+                            Change(
+                                destination,
+                                None,
+                                "remove",
+                                source=source_relative.as_posix(),
+                            )
+                        )
                     if entry is not None:
                         ownership.pop(key)
                     continue
@@ -404,10 +627,23 @@ def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[
                         )
                     if current == kit_content and entry["version"] == KIT_VERSION:
                         continue
-                    changes.append(Change(destination, kit_content, "update"))
+                    changes.append(
+                        Change(
+                            destination,
+                            kit_content,
+                            "update",
+                            source=source_relative.as_posix(),
+                        )
+                    )
                 else:
                     changes.append(
-                        Change(destination, kit_content, "adopt", exclusive=True)
+                        Change(
+                            destination,
+                            kit_content,
+                            "adopt",
+                            exclusive=True,
+                            source=source_relative.as_posix(),
+                        )
                     )
                 ownership[key] = {
                     "source": source_relative.as_posix(),
@@ -426,9 +662,12 @@ def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[
                         + "; ".join(errors)
                         + " (the helper validates consumer facts but never rewrites them)"
                     )
-            elif not remove:
-                changes.append(
-                    Change(facts, _read_kit(FACTS_SOURCE), "adopt", exclusive=True)
+            elif not remove and template_content is None:
+                raise AdoptionError(
+                    f"action required: consumer facts absent at {facts}; supply reviewed "
+                    "facts first by writing them yourself or creating a complete "
+                    "schema-valid example with --facts-template python|typescript; the "
+                    "routing component validates facts but never creates or rewrites them"
                 )
 
             agents = root / AGENTS_DESTINATION
@@ -440,7 +679,12 @@ def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[
                 if addendum.marked:
                     _verified_span(addendum, agents)
                     changes.append(
-                        Change(agents, addendum.prefix + addendum.suffix, "remove addendum")
+                        Change(
+                            agents,
+                            addendum.prefix + addendum.suffix,
+                            "remove addendum",
+                            source=f"existing {AGENTS_DESTINATION} without the managed addendum span",
+                        )
                     )
             else:
                 body = _addendum_body()
@@ -451,6 +695,7 @@ def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[
                             _span_bytes(body) + content,
                             "adopt addendum",
                             exclusive=not agents.exists(),
+                            source=f"{ADDENDUM_SOURCE.as_posix()} span plus existing {AGENTS_DESTINATION} bytes",
                         )
                     )
                 else:
@@ -461,6 +706,7 @@ def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[
                                 agents,
                                 addendum.prefix + _span_bytes(body) + addendum.suffix,
                                 "update addendum",
+                                source=f"{ADDENDUM_SOURCE.as_posix()} span; existing {AGENTS_DESTINATION} bytes preserved",
                             )
                         )
 
@@ -468,7 +714,14 @@ def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[
         record_path = root / OWNERSHIP_RELATIVE
         if not ownership:
             if record_exists:
-                changes.append(Change(record_path, None, "remove"))
+                changes.append(
+                    Change(
+                        record_path,
+                        None,
+                        "remove",
+                        source="no remaining ownership entries",
+                    )
+                )
         else:
             changes.append(
                 Change(
@@ -476,6 +729,7 @@ def prepare(root: Path, components: list[str], *, remove: bool = False) -> list[
                     _serialize_ownership(ownership),
                     "update" if record_exists else "adopt",
                     exclusive=not record_exists,
+                    source="source/version/hash entries of the selected components",
                 )
             )
     return changes
@@ -525,8 +779,15 @@ def _changed_so_far(changed: list[Path]) -> str:
     return ", ".join(str(path) for path in changed) if changed else "none"
 
 
-def apply(root: Path, components: list[str], *, remove: bool = False) -> list[Path]:
-    changes = prepare(root, components, remove=remove)
+def apply(
+    root: Path,
+    components: list[str],
+    *,
+    remove: bool = False,
+    facts_template: str | None = None,
+) -> list[Path]:
+    # Replans against current state instead of executing the previewed plan.
+    changes = prepare(root, components, remove=remove, facts_template=facts_template)
     changed: list[Path] = []
     for change in changes:
         destination = change.destination
@@ -571,36 +832,125 @@ def _describe_past(action: str) -> str:
     return f"{past} {rest}".rstrip()
 
 
+def _print_preview(changes: list[Change]) -> None:
+    """Report each change's destination, source, and content for review."""
+    for change in changes:
+        print(f"Would {change.action}: {change.destination}")
+        print(f"  source: {change.source or 'unknown'}")
+        if change.content is None:
+            print("  content: destination file is removed; no bytes are written")
+            continue
+        print(f"  content: {len(change.content)} bytes sha256-{_sha256(change.content)}")
+        try:
+            text = change.content.decode("utf-8")
+        except UnicodeDecodeError:
+            print("  content bytes are not UTF-8 text; review the digest above")
+            continue
+        print("  ----- content begin -----")
+        print(text)
+        print("  ----- content end -----")
+
+
+def _print_component_list() -> None:
+    print("Selectable components (explicit selection only; prerequisites are never expanded):")
+    print(
+        "Adoption host: Python 3.11+ standard library only; adoption copies bytes "
+        "and never installs tools."
+    )
+    for name in COMPONENTS:
+        if name in SHARED_ASSETS:
+            destinations = ", ".join(
+                destination.as_posix() for _, destination in SHARED_ASSETS[name]
+            )
+        else:
+            destinations = (
+                f"{AGENTS_DESTINATION} (managed delimited addendum span only), "
+                f"{FACTS_DESTINATION.as_posix()} (validated, never rewritten)"
+            )
+        if name in DEPENDENCIES:
+            prerequisites = (
+                ", ".join(DEPENDENCIES[name]) + " (explicit only; never expanded)"
+            )
+        else:
+            prerequisites = "none"
+        print()
+        print(name)
+        print(f"  purpose: {COMPONENT_PURPOSES[name]}")
+        print(f"  prerequisites: {prerequisites}")
+        print(f"  destinations: {destinations}")
+        print(f"  kind: {COMPONENT_KINDS[name]}")
+        print(f"  runtime: {COMPONENT_RUNTIME[name]}")
+        print(f"  activation: {COMPONENT_ACTIVATION[name]}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, required=True, help="consumer repository root")
-    parser.add_argument(
-        "--component", action="append", required=True, choices=sorted(COMPONENTS)
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser(
+        "list",
+        help="describe every selectable component; no --root is needed",
     )
-    parser.add_argument("--apply", action="store_true", help="apply the previewed action")
-    parser.add_argument(
+    adopt = subparsers.add_parser(
+        "adopt",
+        help="preview or apply explicitly named components under --root",
+    )
+    adopt.add_argument("--root", type=Path, required=True, help="consumer repository root")
+    adopt.add_argument(
+        "components",
+        nargs="*",
+        metavar="component",
+        help="explicit component names; selections are never expanded",
+    )
+    adopt.add_argument(
+        "--apply",
+        action="store_true",
+        help="replan against current state and apply the changes",
+    )
+    adopt.add_argument(
         "--remove",
         action="store_true",
         help="preview removal; combine with --apply to remove",
     )
+    adopt.add_argument(
+        "--facts-template",
+        choices=FACTS_TEMPLATE_NAMES,
+        help=(
+            "create .gajaestack/routing.toml from this complete schema-valid example "
+            "when facts are absent; existing facts are never overwritten or merged"
+        ),
+    )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+    if args.command == "list":
+        _print_component_list()
+        return 0
+    if args.command != "adopt":
+        parser.error("a subcommand is required: list or adopt")
 
     try:
-        changes = prepare(args.root, args.component, remove=args.remove)
+        changes = prepare(
+            args.root,
+            args.components,
+            remove=args.remove,
+            facts_template=args.facts_template,
+        )
         if args.apply:
             actions = {change.destination: change.action for change in changes}
-            changed = apply(args.root, args.component, remove=args.remove)
+            changed = apply(
+                args.root,
+                args.components,
+                remove=args.remove,
+                facts_template=args.facts_template,
+            )
             for destination in changed:
                 print(f"{_describe_past(actions.get(destination, 'apply'))}: {destination}")
             if not changed:
                 print("No changes required.")
         else:
-            for change in changes:
-                print(f"Would {change.action}: {change.destination}")
+            _print_preview(changes)
             if not changes:
                 print("No changes required.")
     except AdoptionError as error:
-        print(f"Python trial adoption refused: {error}", file=sys.stderr)
+        print(f"gajaestack adoption refused: {error}", file=sys.stderr)
         return 1
     return 0
 

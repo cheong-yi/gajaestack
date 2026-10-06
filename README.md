@@ -4,6 +4,18 @@ A modular repo-quality kit: practical agent guidance, reusable checks, and repea
 
 Start with [AGENTS.md](AGENTS.md), the agent entry point. The canonical design is [issue #1](https://github.com/cheong-yi/gajaestack/issues/1); the [scope invariant](docs/scope-invariant.md) summarizes its intended product scope without claiming every capability is delivered.
 
+## Discovery
+
+List components and their managed destinations, then preview a selection before applying. Preview states each change's content, source, and destination; `--apply` replans and revalidates the selected asset changes against current bytes — the earlier preview is not an immutable transaction:
+
+```sh
+python3 /path/to/gajaestack/scripts/gajaestack.py list
+python3 /path/to/gajaestack/scripts/gajaestack.py adopt ruff guard --root /path/to/consumer
+python3 /path/to/gajaestack/scripts/gajaestack.py adopt ruff guard --root /path/to/consumer --apply
+```
+
+Selections never expand dependencies implicitly, and bindings require reviewed facts that already exist; facts templates are explicit and absent-only (`--facts-template python|typescript`). The [selectable native checks guide](docs/python-trial.md) is the authoritative walkthrough of the five-step journey, native wiring, removal, and bypass limits. Dependency installs and CI changes remain explicitly approved steps.
+
 ## Skills
 
 Select each skill independently; none requires another:
@@ -50,13 +62,7 @@ The optional Python import-prerequisite helper checks whether named import modul
 python3 scripts/check_python_imports.py setuptools tree_sitter tree_sitter_javascript tree_sitter_typescript
 ```
 
-The [selectable native checks guide](docs/python-trial.md) documents the shared adopter, Python/TypeScript native integration, explicit prerequisites, safe updates/removal and bypass limits. `routing` manages only a short delimited soft-guidance addendum, preserving unrelated root instructions and never deleting `AGENTS.md`. Consumer-owned `.gajaestack/routing.toml` remains the single facts authority. Version/hash ownership protects shared assets and the addendum, not arbitrary consumer content.
-
-Select `ruff` for quick/full scoped lint, `guard` for early pytest prerequisites, and separately `required-ruff` to bind full Ruff before collection. Select `typescript` for Bun-hosted native type/lint checks and separately `typescript-guard` for a Bun test preload binding. Existing tsc and Biome configurations remain authoritative; Bun transpilation/build is not typechecking. Copying assets does not wire native configuration: that is an explicit consumer adoption step. Guard-only Python does not need Ruff; both installed but unbound do not implicitly lint.
-
-Normal configured native test launches enforce the selected guards at their documented collection/import boundary. Disabling configuration/plugins, earlier startup effects, alternate invocations, and unchecked merges are not prevented. Actual RERG/Gajaeway adoption, CI/merge enforcement, runners, deployment and downloads remain separately authorized work. None of these bounded mechanisms establishes delivery of all six capabilities.
-
-For a Python change, use the repository's selected checks and affected tests first; when Ruff is selected, its changed-file helper provides quick feedback. Keep quick feedback distinct from full pre-completion regression. The trial guide shows direct commands and explains when the full native harness applies. Missing selected tools and failed checks remain failures, not passes or silent skips.
+The [selectable native checks guide](docs/python-trial.md) is the authoritative reference for the shared adopter, Python/TypeScript native integration, explicit prerequisites, safe updates/removal and bypass limits. Consumer-owned `.gajaestack/routing.toml` remains the single facts authority; `routing` manages only a short delimited soft-guidance addendum and never deletes `AGENTS.md`; version/hash ownership protects shared assets and the addendum, not arbitrary consumer content. Copying assets does not wire native configuration, guards enforce only at their documented collection/import boundary, actual RERG/Gajaeway adoption, CI/merge enforcement, runners, deployment and downloads remain separately authorized, none of these bounded mechanisms delivers all six capabilities, and missing selected tools and failed checks remain failures, not passes or silent skips.
 
 ## Reference bank
 

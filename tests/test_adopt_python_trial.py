@@ -5,12 +5,14 @@ import hashlib
 import io
 import json
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest import mock
 
-import scripts.adopt_python_trial as trial
-from scripts.adopt_python_trial import AdoptionError, apply, main, prepare
+import scripts.gajaestack as gajaestack
+from scripts.check_repo import routing_policy_file_errors
+from scripts.gajaestack import AdoptionError, apply, main, prepare
 
 KIT = Path(__file__).resolve().parents[1]
 OWNERSHIP_SCHEMA = "gajaestack-adoption-ownership-v1"
@@ -406,12 +408,12 @@ class PythonTrialAdoptionTests(unittest.TestCase):
     # --- routing addendum lifecycle ---------------------------------------------
 
     def test_routing_selection_adopts_facts_template_and_delimited_addendum(self) -> None:
-        preview = prepare(self.root, ["routing"])
+        preview = prepare(self.root, ["routing"], facts_template="python")
         self.assertEqual(
             [change.destination for change in preview],
             [self.facts, self.agents],
         )
-        self.assertEqual(len(apply(self.root, ["routing"])), 2)
+        self.assertEqual(len(apply(self.root, ["routing"], facts_template="python")), 2)
 
         text = self.agents.read_text(encoding="utf-8")
         self.assertTrue(
@@ -439,7 +441,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         original = b"# consumer entry\n\nkeep this byte-for-byte\n"
         self.agents.write_bytes(original)
 
-        adopted = apply(self.root, ["routing"])
+        adopted = apply(self.root, ["routing"], facts_template="python")
         self.assertEqual(adopted, [self.facts, self.agents])
         self.assertEqual(
             self.agents.read_bytes(),
@@ -462,7 +464,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         self.assertFalse(self.ownership.exists())
 
     def test_addendum_update_replaces_only_owned_span(self) -> None:
-        apply(self.root, ["routing"])
+        apply(self.root, ["routing"], facts_template="python")
         facts_bytes = self.facts.read_bytes()
 
         prefix = b"consumer instructions\n"
@@ -485,7 +487,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         self.assertEqual(self.facts.read_bytes(), facts_bytes)
 
     def test_edited_addendum_span_refuses_update_and_removal(self) -> None:
-        apply(self.root, ["routing"])
+        apply(self.root, ["routing"], facts_template="python")
         tampered = self.agents.read_bytes().replace(
             b"Keep quick iteration", b"Keep sloppy iteration"
         )
@@ -501,7 +503,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         original = b"no trailing newline"
         self.agents.write_bytes(original)
 
-        apply(self.root, ["routing"])
+        apply(self.root, ["routing"], facts_template="python")
         content = self.agents.read_bytes()
         self.assertTrue(content.startswith(b"<!-- gajaestack:routing-addendum begin"))
         self.assertTrue(content.endswith(original))
@@ -524,6 +526,9 @@ class PythonTrialAdoptionTests(unittest.TestCase):
             "glued begin marker": b"intro " + valid,
             "reserved marker without begin or end": b"<!-- gajaestack:routing-addendum bogus -->\n",
         }
+        # Prior reviewed facts keep the marker refusal as the reported error.
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        self.facts.write_bytes((KIT / "python/routing.toml").read_bytes())
         for name, payload in cases.items():
             with self.subTest(name=name):
                 self.agents.write_bytes(payload)
@@ -535,7 +540,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
                 self.assertEqual(self.agents.read_bytes(), payload)
 
     def test_removal_keeps_agents_file_even_when_adoption_created_it(self) -> None:
-        apply(self.root, ["routing"])
+        apply(self.root, ["routing"], facts_template="python")
         facts_bytes = self.facts.read_bytes()
 
         removed = apply(self.root, ["routing"], remove=True)
@@ -547,7 +552,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
     def test_removal_restores_preexisting_agents_bytes_exactly(self) -> None:
         original = b"# consumer entry\nkeep me\n"
         self.agents.write_bytes(original)
-        apply(self.root, ["routing"])
+        apply(self.root, ["routing"], facts_template="python")
         self.assertNotEqual(self.agents.read_bytes(), original)
 
         apply(self.root, ["routing"], remove=True)
@@ -566,7 +571,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
     # --- consumer facts lifecycle ------------------------------------------------
 
     def test_facts_are_absent_only_and_survive_updates_and_removal(self) -> None:
-        apply(self.root, ["routing"])
+        apply(self.root, ["routing"], facts_template="python")
         kit_facts = (KIT / "python/routing.toml").read_bytes()
         self.assertEqual(self.facts.read_bytes(), kit_facts)
 
@@ -663,7 +668,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         stub_kit = self.root / "kit-stub"
         stub_kit.mkdir()
 
-        with mock.patch.object(trial, "KIT_ROOT", stub_kit):
+        with mock.patch.object(gajaestack, "KIT_ROOT", stub_kit):
             removed = apply(self.root, ["ruff"], remove=True)
 
         self.assertEqual(removed, [self.ruff_config, self.ruff_helper, self.ownership])
@@ -712,7 +717,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
     def test_missing_kit_source_refuses_without_writes(self) -> None:
         stub_kit = self.root / "kit-stub"
         stub_kit.mkdir()
-        with mock.patch.object(trial, "KIT_ROOT", stub_kit):
+        with mock.patch.object(gajaestack, "KIT_ROOT", stub_kit):
             with self.assertRaisesRegex(AdoptionError, "cannot read kit component"):
                 apply(self.root, ["ruff"])
         self.assertFalse(self.ruff_config.exists())
@@ -723,7 +728,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
     def test_cli_defaults_to_preview_and_rejects_unknown_selection(self) -> None:
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            result = main(["--root", str(self.root), "--component", "ruff"])
+            result = main(["adopt", "--root", str(self.root), "ruff"])
         self.assertEqual(result, 0)
         self.assertIn("Would adopt", output.getvalue())
         self.assertFalse(self.ruff_config.exists())
@@ -733,9 +738,9 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         with contextlib.redirect_stdout(output):
             result = main(
                 [
+                    "adopt",
                     "--root",
                     str(self.root),
-                    "--component",
                     "ruff",
                     "--remove",
                 ]
@@ -748,11 +753,10 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         with contextlib.redirect_stderr(error):
             result = main(
                 [
+                    "adopt",
                     "--root",
                     str(self.root),
-                    "--component",
                     "ruff",
-                    "--component",
                     "ruff",
                     "--apply",
                 ]
@@ -776,7 +780,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            result = main(["--root", str(self.root), "--component", "ruff"])
+            result = main(["adopt", "--root", str(self.root), "ruff"])
         self.assertEqual(result, 0)
         self.assertIn("Would adopt", output.getvalue())
         self.assertIn("Would update", output.getvalue())
@@ -784,13 +788,305 @@ class PythonTrialAdoptionTests(unittest.TestCase):
 
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            result = main(["--root", str(self.root), "--component", "ruff", "--apply"])
+            result = main(["adopt", "--root", str(self.root), "ruff", "--apply"])
         self.assertEqual(result, 0)
         self.assertIn("Adopted", output.getvalue())
         self.assertIn("Updated", output.getvalue())
         self.assertEqual(
             self.ruff_config.read_bytes(), (KIT / "python/ruff.toml").read_bytes()
         )
+
+    # --- list and explicit facts-template CLI ------------------------------------
+
+    def test_list_subcommand_needs_no_root_and_describes_every_component(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["list"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        names = (
+            "guard",
+            "required-ruff",
+            "ruff",
+            "mypy",
+            "hypothesis",
+            "typescript",
+            "typescript-guard",
+            "typescript-config",
+            "routing",
+        )
+        for name in names:
+            self.assertIn(f"\n{name}\n", text)
+        self.assertIn("prerequisites: guard, ruff (explicit only; never expanded)", text)
+        self.assertIn("prerequisites: typescript (explicit only; never expanded)", text)
+        self.assertIn("prerequisites: none", text)
+        self.assertIn("purpose: binds the full Ruff check before pytest collection", text)
+        self.assertIn(".gajaestack/python-trial/ruff.toml", text)
+        self.assertIn(".gajaestack/python/pytest_guard.py", text)
+        self.assertIn("AGENTS.md (managed delimited addendum span only)", text)
+        self.assertIn(".gajaestack/routing.toml (validated, never rewritten)", text)
+        self.assertIn("kind: guidance", text)
+        self.assertIn("kind: executable", text)
+        self.assertIn("kind: activation", text)
+        self.assertIn("Adoption host: Python 3.11+", text)
+        sections: dict[str, dict[str, str]] = {}
+        current: str | None = None
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            if not line.startswith("  "):
+                current = line
+                sections[current] = {}
+                continue
+            key, _, value = line.strip().partition(": ")
+            if current is not None:
+                sections[current][key] = value
+        for name in names:
+            self.assertIn("runtime", sections[name])
+            self.assertIn("activation", sections[name])
+        self.assertIn("Python 3.11+", sections["guard"]["runtime"])
+        self.assertIn("pythonpath = .gajaestack/python", sections["guard"]["activation"])
+        self.assertIn("-p pytest_guard", sections["guard"]["activation"])
+        self.assertIn("reviewed facts select 'guard'", sections["guard"]["activation"])
+        self.assertIn(
+            "-p pytest_required_ruff", sections["required-ruff"]["activation"]
+        )
+        self.assertIn(
+            "required_ruff_before_pytest = 'active'",
+            sections["required-ruff"]["activation"],
+        )
+        self.assertIn("prior reviewed facts", sections["required-ruff"]["activation"])
+        self.assertIn("Ruff tool installed", sections["ruff"]["runtime"])
+        self.assertIn("installs no lint enforcement", sections["ruff"]["activation"])
+        self.assertIn("mypy tool installed", sections["mypy"]["runtime"])
+        self.assertIn("config-only and advisory", sections["mypy"]["activation"])
+        self.assertIn(
+            "mypy --config-file .gajaestack/python-trial/mypy.ini",
+            sections["mypy"]["activation"],
+        )
+        self.assertIn("hypothesis property-test dependency", sections["hypothesis"]["runtime"])
+        self.assertIn(
+            "hypothesis dependency is provisioned", sections["hypothesis"]["activation"]
+        )
+        self.assertIn("Bun plus local node_modules", sections["typescript"]["runtime"])
+        self.assertIn(
+            "Bun plus local node_modules",
+            sections["typescript-guard"]["runtime"],
+        )
+        self.assertIn("bunfig.toml", sections["typescript-guard"]["activation"])
+        self.assertIn("preload", sections["typescript-guard"]["activation"])
+        self.assertIn("prior reviewed facts", sections["typescript-guard"]["activation"])
+        self.assertEqual(sections["typescript-config"]["kind"], "guidance")
+        self.assertIn("config-only baseline", sections["typescript-config"]["activation"])
+        self.assertIn(
+            "executes or enforces nothing", sections["typescript-config"]["activation"]
+        )
+        self.assertEqual(sections["routing"]["kind"], "guidance")
+        self.assertIn("soft guidance only", sections["routing"]["activation"])
+        self.assertIn(
+            "--facts-template python|typescript", sections["routing"]["activation"]
+        )
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                main(["list", "--root", str(self.root)])
+
+    def test_list_runtime_reports_typescript_tools_as_conditional_dependencies(
+        self,
+    ) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["list"])
+        self.assertEqual(result, 0)
+        runtimes: dict[str, str] = {}
+        current = ""
+        for line in output.getvalue().splitlines():
+            if line.strip() and not line.startswith("  "):
+                current = line
+            elif line.startswith("  runtime: ") and current:
+                runtimes[current] = line.removeprefix("  runtime: ")
+        for name in ("typescript", "typescript-guard"):
+            self.assertIn(name, runtimes)
+            runtime = runtimes[name]
+            self.assertIn("tsc (only when typechecking is selected)", runtime)
+            self.assertIn("Biome (only when linting is selected)", runtime)
+            self.assertNotIn("tsc and Biome", runtime)
+
+    def test_adopt_cli_positional_selection_previews_source_destination_content(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), "ruff"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn(f"Would adopt: {self.ruff_config}", text)
+        self.assertIn("source: python/ruff.toml", text)
+        kit_config = (KIT / "python/ruff.toml").read_bytes()
+        self.assertIn(
+            f"content: {len(kit_config)} bytes sha256-{hashlib.sha256(kit_config).hexdigest()}",
+            text,
+        )
+        self.assertIn(kit_config.decode("utf-8"), text)
+        self.assertFalse(self.ruff_config.exists())
+
+    def test_adopt_cli_rejects_empty_duplicate_and_unknown_selections(self) -> None:
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            result = main(["adopt", "--root", str(self.root)])
+        self.assertEqual(result, 1)
+        self.assertIn("no components selected", error.getvalue())
+
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            result = main(["adopt", "--root", str(self.root), "ruff", "ruff", "--apply"])
+        self.assertEqual(result, 1)
+        self.assertIn("must not be repeated", error.getvalue())
+
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            result = main(["adopt", "--root", str(self.root), "ruff", "invented"])
+        self.assertEqual(result, 1)
+        self.assertIn("unknown component(s): invented", error.getvalue())
+        self.assertFalse(self.ruff_config.exists())
+        self.assertFalse(self.ownership.exists())
+
+    def test_adopt_cli_never_expands_dependencies(self) -> None:
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            result = main(["adopt", "--root", str(self.root), "required-ruff", "--apply"])
+        self.assertEqual(result, 1)
+        self.assertIn("requires component 'guard'", error.getvalue())
+        self.assertFalse((self.root / ".gajaestack/python/pytest_required_ruff.py").exists())
+        self.assertFalse((self.root / ".gajaestack/python/pytest_guard.py").exists())
+        self.assertFalse(self.ruff_config.exists())
+        self.assertFalse(self.ownership.exists())
+
+    def test_apply_replans_against_current_state_after_preview(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(["adopt", "--root", str(self.root), "ruff"]), 0)
+        self.assertIn("Would adopt", output.getvalue())
+        self.assertFalse(self.ruff_config.exists())
+
+        self.ruff_config.parent.mkdir(parents=True)
+        self.ruff_config.write_bytes(b"consumer config\n")
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            result = main(["adopt", "--root", str(self.root), "ruff", "--apply"])
+        self.assertEqual(result, 1)
+        self.assertIn("unowned destination", error.getvalue())
+        self.assertEqual(self.ruff_config.read_bytes(), b"consumer config\n")
+        self.assertFalse(self.ruff_helper.exists())
+
+    def test_routing_refuses_absent_facts_until_reviewed_facts_are_supplied(self) -> None:
+        with self.assertRaisesRegex(AdoptionError, "consumer facts absent"):
+            prepare(self.root, ["routing"])
+        self.assertFalse(self.facts.exists())
+        self.assertFalse(self.agents.exists())
+
+        self.facts.parent.mkdir(parents=True)
+        self.facts.write_bytes((KIT / "python/routing.toml").read_bytes())
+        preview = prepare(self.root, ["routing"])
+        self.assertEqual([change.destination for change in preview], [self.agents])
+
+    def test_facts_template_python_writes_default_preset_only_when_absent(self) -> None:
+        adopted = apply(self.root, ["ruff"], facts_template="python")
+        self.assertEqual(
+            adopted,
+            [self.facts, self.ruff_config, self.ruff_helper, self.ownership],
+        )
+        self.assertEqual(self.facts.read_bytes(), (KIT / "python/routing.toml").read_bytes())
+
+        with self.assertRaisesRegex(AdoptionError, "refusing to overwrite existing facts"):
+            prepare(self.root, ["mypy"], facts_template="typescript")
+        self.assertEqual(self.facts.read_bytes(), (KIT / "python/routing.toml").read_bytes())
+        self.assertFalse((self.root / ".gajaestack/python-trial/mypy.ini").exists())
+
+    def test_facts_template_typescript_is_complete_and_schema_valid(self) -> None:
+        adopted = apply(self.root, ["typescript"], facts_template="typescript")
+        self.assertEqual(
+            adopted,
+            [
+                self.facts,
+                self.root / ".gajaestack/typescript/check.ts",
+                self.ownership,
+            ],
+        )
+        self.assertEqual(self.facts.read_bytes(), gajaestack.TYPESCRIPT_FACTS_TEMPLATE)
+        document = tomllib.loads(self.facts.read_text(encoding="utf-8"))
+        for category in ("required", "advisory", "on_demand", "conditional"):
+            self.assertIn(category, document)
+        self.assertTrue(document["required"])
+        self.assertTrue(document["on_demand"])
+        self.assertEqual(document["fact"]["schema_version"], 1)
+        self.assertIn("typescript", document["fact"]["selected_components"])
+        self.assertNotIn("typescript-guard", document["fact"]["selected_components"])
+        self.assertIs(document["typescript"]["typecheck"], True)
+        self.assertIs(document["typescript"]["lint"], True)
+        self.assertEqual(routing_policy_file_errors(self.facts), [])
+        self.assertEqual(routing_policy_file_errors(KIT / "python/routing.toml"), [])
+
+    def test_facts_template_refuses_remove_combination(self) -> None:
+        with self.assertRaisesRegex(AdoptionError, "cannot be combined with --remove"):
+            prepare(self.root, ["routing"], remove=True, facts_template="python")
+        self.assertFalse(self.facts.exists())
+
+    def test_facts_template_cannot_satisfy_prior_facts_binding_check(self) -> None:
+        # Same run: _check_bindings sees the facts that exist before the planned
+        # template creation, so binding adoption is refused with nothing written.
+        with self.assertRaisesRegex(AdoptionError, "binding requires reviewed consumer facts"):
+            prepare(
+                self.root,
+                ["guard", "ruff", "required-ruff"],
+                facts_template="python",
+            )
+        error = io.StringIO()
+        with contextlib.redirect_stderr(error):
+            result = main(
+                [
+                    "adopt",
+                    "--root",
+                    str(self.root),
+                    "guard",
+                    "ruff",
+                    "required-ruff",
+                    "--facts-template",
+                    "python",
+                    "--apply",
+                ]
+            )
+        self.assertEqual(result, 1)
+        self.assertIn("binding requires reviewed consumer facts", error.getvalue())
+        self.assertFalse(self.facts.exists())
+        self.assertFalse(self.agents.exists())
+        self.assertFalse(self.ownership.exists())
+        self.assertFalse((self.root / ".gajaestack/python/pytest_guard.py").exists())
+
+        # Later run: template facts are not reviewed binding authorization.
+        apply(self.root, ["guard", "ruff"], facts_template="python")
+        with self.assertRaisesRegex(
+            AdoptionError, "must explicitly select binding 'required-ruff'"
+        ):
+            prepare(self.root, ["guard", "ruff", "required-ruff"])
+        self.assertFalse((self.root / ".gajaestack/python/pytest_required_ruff.py").exists())
+
+    def test_cli_typescript_template_flow_matches_documented_example(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(
+                [
+                    "adopt",
+                    "--root",
+                    str(self.root),
+                    "typescript",
+                    "--facts-template",
+                    "typescript",
+                    "--apply",
+                ]
+            )
+        self.assertEqual(result, 0)
+        self.assertIn("Adopted", output.getvalue())
+        self.assertEqual(self.facts.read_bytes(), gajaestack.TYPESCRIPT_FACTS_TEMPLATE)
+        self.assertTrue((self.root / ".gajaestack/typescript/check.ts").is_file())
+        self.assertEqual(routing_policy_file_errors(self.facts), [])
 
 
 class MechanicalAdoptionTests(unittest.TestCase):
