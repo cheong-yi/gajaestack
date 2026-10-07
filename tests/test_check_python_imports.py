@@ -4,7 +4,7 @@ import contextlib
 import io
 import unittest
 
-from scripts.check_python_imports import main, missing_imports
+from python.check_python_imports import main, missing_imports
 
 
 class CheckPythonImportsTests(unittest.TestCase):

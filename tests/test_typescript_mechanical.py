@@ -1,3 +1,13 @@
+"""Source-mode regression tests for the TypeScript checker used as an internal fixture.
+
+Every consumer built here runs a *copied* ``check.ts`` from
+``.gajaestack/typescript/check.ts``. That copy exists only so these unit tests
+can exercise changed-file scope and quick-mode regressions against source
+bytes; it is not a consumer adoption path. Consumers adopt the packed package
+and run ``bun run gajaestack-check [--quick] [--timing]``, which is the entry
+point text asserted below. Real package adoption is covered by
+``tests/test_native_package.py``.
+"""
 from __future__ import annotations
 
 import json
@@ -44,8 +54,10 @@ GOOD_TS = 'export const answer: number = 42;\n'
 TYPE_ERROR_TS = 'export const wrong: number = "not a number";\n'
 LINT_ERROR_TS = "export function observe(): void {\n\tdebugger;\n}\n"
 
+# Source-mode fixture path invoked by these unit tests; not an adoption path.
 ENTRY_PATH = ".gajaestack/typescript/check.ts"
-USAGE_TEXT = "usage: bun .gajaestack/typescript/check.ts [--quick] [--timing]"
+# The checker prints the package-native entry point wherever it runs.
+USAGE_TEXT = "usage: bun run gajaestack-check [--quick] [--timing]"
 
 
 def toml_list(items: list[str]) -> str:
@@ -94,7 +106,13 @@ def build_consumer(
     failing: bool = False,
     tools: tuple[str, ...] = ("tsc", "biome"),
 ) -> None:
-    """Create an isolated consumer with adopted assets at .gajaestack/typescript."""
+    """Create an isolated source-mode fixture consumer with a copied checker.
+
+    The copy at .gajaestack/typescript/check.ts is an internal unit-test harness
+    for changed-file scope behavior only, never a consumer adoption path;
+    package adoption uses ``bun run gajaestack-check`` (see
+    tests/test_native_package.py).
+    """
     root = Path(root)
     assets = root / ".gajaestack" / "typescript"
     assets.mkdir(parents=True)
@@ -981,9 +999,9 @@ class TypeScriptAssetContractTests(unittest.TestCase):
             text = (ASSET_SOURCE / name).read_text(encoding="utf-8")
             self.assertNotIn("python", text.lower(), f"{name} must not require a Python runtime")
 
-    def test_entry_usage_names_gajaestack_typescript_destination(self) -> None:
+    def test_entry_usage_names_package_bin_entrypoint(self) -> None:
         text = (ASSET_SOURCE / "check.ts").read_text(encoding="utf-8")
-        self.assertIn(ENTRY_PATH, text)
+        self.assertIn(USAGE_TEXT, text)
         self.assertIn("usage:", text)
         self.assertIn("[--quick]", text)
         self.assertIn("[--timing]", text)

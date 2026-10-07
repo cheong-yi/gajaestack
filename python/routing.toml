@@ -21,10 +21,10 @@ test_command = "python -m pytest"
 # Optional fact.completion_timeout_seconds: project-owned outer seconds for
 # test_command (integer 1..9007199254740991). Omitted means unconfigured.
 # The calling launcher must honour it; this kit does not impose a timeout.
-ruff_command = "python .gajaestack/scripts/check_changed_python.py"
+ruff_command = "gajaestack-python-check"
 affected_test_command = "python -m pytest tests/rerg/test_percent_decoder.py"
-ruff_format_command = "ruff format --check --config .gajaestack/python-trial/ruff.toml rerg/raw_derivation.py tests/rerg/test_percent_decoder.py"
-mypy_command = "mypy --config-file .gajaestack/python-trial/mypy.ini"
+ruff_format_command = "ruff format --check --config ruff.toml rerg/raw_derivation.py tests/rerg/test_percent_decoder.py"
+mypy_command = "mypy --config-file mypy.ini"
 ci_jobs_added = false
 pcd_is_enforcement = false
 # To bind Ruff before pytest, separately select guard + ruff + required-ruff,
@@ -38,4 +38,4 @@ python_version = "3.12"
 imports = []
 executables = []
 ruff_paths = ["rerg/raw_derivation.py", "tests/rerg/test_percent_decoder.py"]
-ruff_config = ".gajaestack/python-trial/ruff.toml"
+ruff_config = "ruff.toml"

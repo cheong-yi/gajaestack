@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gajaestack"
+description = "Selective consumer-rooted native quality checks and agent guidance"
+readme = "README.md"
+requires-python = ">=3.11"
+# No runtime dependencies: consumers bring their own pytest and Ruff, and no
+# license is claimed until licensing is legally established.
+dynamic = ["version"]
+
+[project.scripts]
+gajaestack-python-check = "gajaestack.check_changed_python:main"
+gajaestack-imports = "gajaestack.check_python_imports:main"
+gajaestack-routing = "gajaestack.routing:main"
+
+# No [project.entry-points.pytest11]: the pytest bindings are never activated
+# by installation, only explicitly with -p gajaestack.pytest_guard and
+# -p gajaestack.pytest_required_ruff.
+
+[tool.setuptools]
+package-dir = { gajaestack = "python", gajaestack_guidance = "skills" }
+packages = ["gajaestack", "gajaestack_guidance"]
+include-package-data = false
+
+[tool.setuptools.dynamic]
+version = { attr = "gajaestack.__version__" }
+
+[tool.setuptools.package-data]
+gajaestack = [
+    "ruff.toml",
+    "mypy.ini",
+    "test_percent_decoder_properties.py",
+    "routing.toml",
+    "routing/AGENTS.md",
+]
+gajaestack_guidance = ["*/SKILL.md"]

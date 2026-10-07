@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """Check selected Python files with Ruff: quick changed-path mode or full scope.
 
-Usage in a consumer checkout after selecting the ``ruff`` component::
+Usage in a consumer checkout with the installed ``gajaestack`` package::
 
     # quick mode (default): changed Python files in the Git worktree
-    python .gajaestack/scripts/check_changed_python.py [--config PATH] \
+    gajaestack-python-check [--config PATH] \
         [--path REPOSITORY_PATH]... [--impact REPOSITORY_PATH]... \
         [--facts PATH] [--timing]
 
     # full mode: the complete selected scope declared in the facts file
-    python .gajaestack/scripts/check_changed_python.py --full [--config PATH] \
+    gajaestack-python-check --full [--config PATH] \
         [--facts PATH] [--timing]
+
+A source copy (a repository checkout or a consumer-copied helper) accepts the
+same arguments when invoked directly as a script.
 
 Quick mode discovers ``.py`` files with staged or unstaged tracked changes
 plus untracked non-ignored files in the current Git worktree, skips deleted
 paths, and runs ``ruff check`` from the repository root as
-``ruff check --no-cache --config PATH -- <files>``. Commands are built as argument
+``ruff check --no-cache --no-fix --no-fix-only --config PATH -- <files>``.
+Commands are built as argument
 arrays without a shell, so filenames containing spaces are handled safely.
 Repeated ``--path`` arguments (files or directories) restrict the selection
 to the intersection of changed files and those repository-relative paths.
@@ -23,7 +27,11 @@ to the intersection of changed files and those repository-relative paths.
 Quick mode expands to the full selected scope whenever a shared policy path
 changed: the selected ``--config`` file, this helper script itself (when it
 lives inside the repository), or any repeated ``--impact`` path (shared
-policy paths such as routing facts or AGENTS guidance). Expansion loads the
+policy paths such as routing facts or AGENTS guidance), and always when the
+helper runs as the installed shared package: installed code and data can
+change locally with no tracked baseline, so every installed quick invocation
+conservatively covers the full selected scope and prints the stdout reason
+``installed shared package (no tracked code baseline)``. Expansion loads the
 full scope from the facts file and rejects visibly if that scope cannot be
 resolved; a quick invocation with no matching targets reports no coverage
 and exits 0 (a no-op, never lint proof).
@@ -69,13 +77,20 @@ import time
 import tomllib
 from pathlib import Path
 
-DEFAULT_CONFIG = ".gajaestack/python-trial/ruff.toml"
+DEFAULT_CONFIG = str(Path(__file__).resolve().with_name("ruff.toml"))
 DEFAULT_FACTS = ".gajaestack/routing.toml"
 MISSING_EXECUTABLE = 127
 INVALID_SCOPE = 2
 COMPLETION_TIMEOUT_FIELD = "completion_timeout_seconds"
 COMPLETION_TIMEOUT_MAX = 9007199254740991
 
+
+def installed_shared_package() -> bool:
+    """True when running as the installed shared package, not a source copy."""
+    if __package__ == "gajaestack":
+        return True
+    parts = Path(__file__).resolve().parts
+    return "site-packages" in parts or "dist-packages" in parts
 
 class GitError(RuntimeError):
     """Git could not report the changed files."""
@@ -91,7 +106,7 @@ class ScopeError(RuntimeError):
 
 def git_output(*args: str, cwd: Path | None = None) -> bytes:
     try:
-        completed = subprocess.run(["git", *args], cwd=cwd, capture_output=True)
+        completed = subprocess.run(["git", "--no-optional-locks", *args], cwd=cwd, capture_output=True)
     except FileNotFoundError:
         raise GitError("git executable not found", MISSING_EXECUTABLE) from None
     if completed.returncode != 0:
@@ -158,9 +173,13 @@ def ruff_check(
         print("error: empty Ruff scope; no coverage", file=sys.stderr)
         status = INVALID_SCOPE
     else:
-        command = ["ruff", "check", "--no-cache", "--config", config, "--", *files]
+        command = ["ruff", "check", "--no-cache", "--no-fix", "--no-fix-only", "--config", config, "--", *files]
+        # Lint policy remains consumer-owned; check invocations must not inherit
+        # native configuration or environment defaults that write files.
+        environment = os.environ.copy()
+        environment.pop("RUFF_OUTPUT_FILE", None)
         try:
-            completed = subprocess.run(command, cwd=root)
+            completed = subprocess.run(command, cwd=root, env=environment)
             status = completed.returncode
         except FileNotFoundError:
             print("error: ruff executable not found", file=sys.stderr)
@@ -466,12 +485,19 @@ def main(argv: list[str] | None = None) -> int:
     matched = sorted(
         trigger for trigger in triggers if trigger and _matches(changed, trigger)
     )
-    if matched:
-        print(f"Quick scope expanded to full selected scope: changed {', '.join(matched)}")
+    reasons = list(matched)
+    installed = installed_shared_package()
+    if installed:
+        reasons.append("installed shared package (no tracked code baseline)")
+    if reasons:
+        print(f"Quick scope expanded to full selected scope: changed {', '.join(reasons)}")
+        # Git may describe an enclosing monorepo, but installed checks consume
+        # the invoking project's facts, paths and tools from its own cwd.
+        scope_root = Path.cwd() if installed else root
         try:
             # Quick-mode discovery is timed in main so Git discovery counts
             # toward the single scope discovery phase line.
-            files, config = full_scope(root, facts_path, args.config, timing=False)
+            files, config = full_scope(scope_root, facts_path, args.config, timing=False)
         except ScopeError as error:
             print(f"error: {error}", file=sys.stderr)
             if timing:
@@ -482,7 +508,7 @@ def main(argv: list[str] | None = None) -> int:
         if timing:
             report_timing("scope discovery", discovery_started, len(files), 0)
         print(f"Full selected scope: {len(files)} file(s) from {facts_path}")
-        return ruff_check(root, config, files, timing=timing)
+        return ruff_check(scope_root, config, files, timing=timing)
 
     files = [
         path

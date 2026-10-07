@@ -1,0 +1,6 @@
+include package.json
+include AGENTS.md
+graft docs
+graft skills
+prune tests
+global-exclude *.py[cod]

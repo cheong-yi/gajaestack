@@ -8,7 +8,7 @@ import subprocess
 import tempfile
 import unittest
 
-from scripts.check_changed_python import ScopeError, full_scope, ruff_check
+from python.check_changed_python import ScopeError, full_scope, ruff_check
 
 KIT = Path(__file__).resolve().parents[1]
 PYTHON = os.environ.get("GAJAESTACK_PYTHON")
@@ -22,6 +22,21 @@ class PythonMechanicalTests(unittest.TestCase):
         cls.version = subprocess.check_output(
             [PYTHON, "-B", "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"], text=True
         ).strip()
+        cls.artifacts = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.artifacts.cleanup)
+        stage = Path(cls.artifacts.name) / "source"
+        stage.mkdir()
+        for name in ("pyproject.toml", "README.md", "package.json", "MANIFEST.in"):
+            if (KIT / name).exists():
+                shutil.copyfile(KIT / name, stage / name)
+        for name in ("python", "skills"):
+            shutil.copytree(KIT / name, stage / name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        subprocess.run(
+            [PYTHON, "-B", "-m", "pip", "wheel", "--no-index", "--no-deps",
+             "--no-build-isolation", "--wheel-dir", cls.artifacts.name, str(stage)],
+            check=True, capture_output=True, text=True,
+        )
+        cls.wheel = next(Path(cls.artifacts.name).glob("*.whl"))
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -29,15 +44,14 @@ class PythonMechanicalTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.root = self.base / "consumer"
         self.root.mkdir()
-        for source, destination in (
-            ("python/pytest_guard.py", ".gajaestack/python/pytest_guard.py"),
-            ("python/pytest_required_ruff.py", ".gajaestack/python/pytest_required_ruff.py"),
-            ("scripts/check_changed_python.py", ".gajaestack/scripts/check_changed_python.py"),
-            ("python/ruff.toml", ".gajaestack/python-trial/ruff.toml"),
-        ):
-            target = self.root / destination
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(KIT / source, target)
+        self.site = self.base / "site"
+        subprocess.run(
+            [PYTHON, "-B", "-m", "pip", "install", "--no-index", "--no-deps",
+             "--no-compile", "--target", str(self.site), str(self.wheel)],
+            check=True, capture_output=True, text=True,
+        )
+        (self.root / ".gajaestack").mkdir()
+        (self.root / "ruff.toml").write_text('lint.select = ["E", "F"]\n')
         (self.root / "app.py").write_text("def twice(value):\n    return value * 2\n")
         (self.root / "tests").mkdir()
         (self.root / "conftest.py").write_text(
@@ -53,22 +67,22 @@ class PythonMechanicalTests(unittest.TestCase):
             "schema_version": 1, "python_version": self.version,
             "imports": [], "executables": [], "root": str(self.root),
             "ruff_paths": ["app.py", "tests"],
-            "ruff_config": ".gajaestack/python-trial/ruff.toml",
+            "ruff_config": "ruff.toml",
         }
         self.selected = ["guard", "ruff", "required-ruff"]
         self.origins = {}
         self.env = os.environ.copy()
         self.env.pop("PYTHONHOME", None)
-        self.env.pop("PYTHONPATH", None)
+        self.env["PYTHONPATH"] = str(self.site)
         self.env["PYTHONDONTWRITEBYTECODE"] = "1"
         self.env["PATH"] = RUFF_BIN + os.pathsep + self.env["PATH"]
         self.configure()
         self.facts()
 
     def configure(self, bound=True, guard=True):
-        plugins = (" -p pytest_guard" if guard else "") + (" -p pytest_required_ruff" if bound else "")
+        plugins = (" -p gajaestack.pytest_guard" if guard else "") + (" -p gajaestack.pytest_required_ruff" if bound else "")
         (self.root / "pytest.ini").write_text(
-            "[pytest]\npythonpath = .gajaestack/python .\n"
+            "[pytest]\npythonpath = .\n"
             f"addopts = --disable-plugin-autoload -p no:cacheprovider{plugins}\n"
             "testpaths = tests\n"
         )
@@ -93,7 +107,7 @@ class PythonMechanicalTests(unittest.TestCase):
 
     def run_native(self, *args, helper=False):
         command = [PYTHON, "-B"]
-        command += [".gajaestack/scripts/check_changed_python.py"] if helper else ["-m", "pytest", "-q", "-s"]
+        command += ["-m", "gajaestack.check_changed_python"] if helper else ["-m", "pytest", "-q", "-s"]
         return subprocess.run(command + list(args), cwd=self.root, env=self.env, text=True, capture_output=True, timeout=45)
 
     def assert_rejected_before_import(self, result):
@@ -121,6 +135,45 @@ class PythonMechanicalTests(unittest.TestCase):
         self.assertEqual(direct.returncode, 1, direct.stdout + direct.stderr)
         self.assertEqual(result.returncode, direct.returncode)
         self.assert_rejected_before_import(result)
+
+    def test_no_write_boundary_overrides_ruff_fix_and_output_defaults(self):
+        original = (self.root / "app.py").read_bytes()
+        cases = (
+            ("fix", 'fix = true\nlint.select = ["F"]\n', b"\nimport os\n"),
+            ("fix-only", 'fix-only = true\nlint.select = ["F"]\n',
+             b"\ndef bad():\n    return undefined_name\n"),
+            ("output-file", 'lint.select = ["F"]\n',
+             b"\ndef bad():\n    return undefined_name\n"),
+        )
+        for name, config, seed in cases:
+            for helper in (True, False):
+                with self.subTest(setting=name, helper=helper):
+                    bad = original + seed
+                    (self.root / "app.py").write_bytes(bad)
+                    (self.root / "ruff.toml").write_text(config)
+                    for marker in ("conftest-imported", "test-imported"):
+                        (self.root / marker).unlink(missing_ok=True)
+                    output = self.root / "unexpected-report.txt"
+                    output.unlink(missing_ok=True)
+                    self.env.pop("RUFF_OUTPUT_FILE", None)
+                    if name == "output-file":
+                        self.env["RUFF_OUTPUT_FILE"] = str(output)
+                    result = self.run_native(*(["--full"] if helper else []), helper=helper)
+                    self.assertEqual((self.root / "app.py").read_bytes(), bad)
+                    self.assertFalse(output.exists())
+                    self.assert_rejected_before_import(result)
+
+    def test_no_write_quick_discovery_preserves_git_index(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True)
+        index = self.root / ".git/index"
+        before = index.read_bytes()
+        app = self.root / "app.py"
+        status = app.stat()
+        os.utime(app, ns=(status.st_atime_ns, status.st_mtime_ns + 2_000_000_000))
+        result = self.run_native(helper=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(index.read_bytes(), before)
 
     def test_native_timing_preserves_rejection_and_checkout_bytes(self):
         self.env["GAJAESTACK_TIMING"] = "1"
@@ -182,6 +235,24 @@ class PythonMechanicalTests(unittest.TestCase):
                 self.assertIn("missing", result.stdout + result.stderr)
                 self.options[field] = []
 
+    def test_bytecode_and_cache_prerequisites_reject_before_import(self):
+        env = self.env.copy()
+        env.pop("PYTHONDONTWRITEBYTECODE", None)
+        result = subprocess.run(
+            [PYTHON, "-m", "pytest", "-q"], cwd=self.root, env=env,
+            text=True, capture_output=True, timeout=45,
+        )
+        self.assert_rejected_before_import(result)
+        self.assertIn("launch Python with -B", result.stdout + result.stderr)
+        config = self.root / "pytest.ini"
+        config.write_text(config.read_text().replace("-p no:cacheprovider", ""))
+        result = self.run_native()
+        self.assert_rejected_before_import(result)
+        self.assertIn("disable pytest cacheprovider", result.stdout + result.stderr)
+        self.assertFalse((self.root / ".pytest_cache").exists())
+        self.configure()
+        self.assertEqual(self.run_native().returncode, 0)
+
     def test_initialization_failure_is_not_discovery_success(self):
         (self.root / "broken.py").write_text('raise RuntimeError("seeded initialization failure")\n')
         self.options["imports"] = ["broken"]
@@ -228,9 +299,8 @@ class PythonMechanicalTests(unittest.TestCase):
         self.assertIn("native-test-seed", result.stdout)
 
     def test_missing_assets_and_facts_fail_closed(self):
-        for name in (".gajaestack/routing.toml", ".gajaestack/python/pytest_guard.py", ".gajaestack/scripts/check_changed_python.py"):
-            with self.subTest(name=name):
-                path = self.root / name
+        for path in (self.root / ".gajaestack/routing.toml", self.site / "gajaestack/pytest_guard.py", self.site / "gajaestack/check_changed_python.py"):
+            with self.subTest(path=path):
                 content = path.read_bytes()
                 path.unlink()
                 self.assert_rejected_before_import(self.run_native())
@@ -269,6 +339,19 @@ class PythonMechanicalTests(unittest.TestCase):
         self.env["PATH"] = "/usr/bin:/bin"
         result = self.run_native("--full", helper=True)
         self.assertEqual(result.returncode, 127, result.stdout + result.stderr)
+
+    def test_installed_quick_uses_consumer_cwd_beneath_git_root(self):
+        subprocess.run(["git", "init", "-q"], cwd=self.base, check=True)
+        (self.base / "ruff.toml").write_text('lint.select = ["E", "F"]\n')
+        (self.base / "app.py").write_text("parent_bad = missing_name\n")
+        (self.base / "tests").mkdir()
+        (self.base / "tests/test_parent.py").write_text("parent_bad = missing_name\n")
+        full = self.run_native("--full", helper=True)
+        self.assertEqual(full.returncode, 0, full.stdout + full.stderr)
+        quick = self.run_native(helper=True)
+        self.assertEqual(quick.returncode, 0, quick.stdout + quick.stderr)
+        self.assertIn("2 file(s)", quick.stdout)
+        self.assertNotIn("parent_bad", quick.stdout + quick.stderr)
 
     def test_empty_missing_and_escaping_scope_reject(self):
         for paths in ([], ["absent.py"], ["../escape.py"]):
@@ -408,7 +491,7 @@ class PythonMechanicalTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertIn("only as a direct [fact] key", result.stdout + result.stderr)
 
-    def test_quick_mode_reads_facts_only_when_a_trigger_changes(self):
+    def test_installed_quick_mode_always_validates_facts(self):
         facts = self.root / ".gajaestack/routing.toml"
         facts.write_text(
             facts.read_text(encoding="utf-8").replace(
@@ -429,10 +512,10 @@ class PythonMechanicalTests(unittest.TestCase):
             cwd=self.root,
             check=True,
         )
-        # Nothing changed: quick mode reads no facts, so the invalid budget passes.
+        # Installed code is not tracked by consumer Git: always validate full facts.
         result = self.run_native(helper=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertNotIn("completion_timeout_seconds", result.stdout + result.stderr)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("completion_timeout_seconds", result.stdout + result.stderr)
         # Touching the facts file expands quick mode; the read rejects the budget.
         facts.write_text(
             facts.read_text(encoding="utf-8") + "# touched\n", encoding="utf-8"

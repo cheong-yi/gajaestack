@@ -6,26 +6,25 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.check_repo import (
-    check,
+from python.routing import (
     completion_budget_errors,
-    main,
     routing_policy_errors,
     routing_policy_file_errors,
 )
+from scripts.check_repo import check, main
 
 
 CORE_FACTS = (
     'python_version = "3.12"',
     'test_command = "python -m pytest"',
     'affected_test_command = "python -m pytest tests/rerg/test_percent_decoder.py"',
-    'mypy_command = "mypy --config-file .gajaestack/python-trial/mypy.ini"',
+    'mypy_command = "mypy --config-file mypy.ini"',
     "ci_jobs_added = false",
     "pcd_is_enforcement = false",
 )
 RUFF_FACTS = (
-    'ruff_command = "python .gajaestack/scripts/check_changed_python.py"',
-    'ruff_format_command = "ruff format --check --config .gajaestack/python-trial/ruff.toml rerg/raw_derivation.py tests/rerg/test_percent_decoder.py"',
+    'ruff_command = "gajaestack-python-check"',
+    'ruff_format_command = "ruff format --check --config ruff.toml rerg/raw_derivation.py tests/rerg/test_percent_decoder.py"',
 )
 
 
@@ -45,6 +44,8 @@ class CheckRepoTests(unittest.TestCase):
         (root / "python/routing.toml").write_bytes(
             (Path(__file__).resolve().parents[1] / "python/routing.toml").read_bytes()
         )
+        (root / "package.json").write_text('{"name":"gajaestack","version":"0.1.0"}\n')
+        (root / "python/__init__.py").write_text('__version__ = "0.1.0"\n')
 
     def write_facts(
         self,
@@ -68,7 +69,7 @@ class CheckRepoTests(unittest.TestCase):
             runtime = (
                 '\n[python]\nschema_version = 1\npython_version = "3.12"\n'
                 'imports = []\nexecutables = []\nruff_paths = ["app.py"]\n'
-                'ruff_config = ".gajaestack/python-trial/ruff.toml"\n'
+                'ruff_config = "ruff.toml"\n'
             )
         policy_path.write_text(
             head + marker + "\n" + "".join(f"{line}\n" for line in facts) + runtime,
@@ -529,6 +530,51 @@ class CheckRepoTests(unittest.TestCase):
                 direct,
             )
 
+
+    def test_version_metadata_matches_package_json(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            (root / "package.json").write_text(
+                '{"name": "gajaestack", "version": "0.1.0"}\n', encoding="utf-8"
+            )
+            (root / "python/__init__.py").write_text(
+                '__version__ = "0.1.0"\n', encoding="utf-8"
+            )
+            self.assertEqual(check(root), [])
+
+    def test_version_mismatch_between_package_json_and_python_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            (root / "package.json").write_text(
+                '{"name": "gajaestack", "version": "0.2.0"}\n', encoding="utf-8"
+            )
+            (root / "python/__init__.py").write_text(
+                '__version__ = "0.1.0"\n', encoding="utf-8"
+            )
+            errors = check(root)
+            self.assertTrue(any("version mismatch" in e for e in errors), errors)
+
+    def test_package_json_without_python_version_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            (root / "python/__init__.py").unlink()
+            (root / "package.json").write_text(
+                '{"name": "gajaestack", "version": "0.1.0"}\n', encoding="utf-8"
+            )
+            errors = check(root)
+            self.assertTrue(
+                any("cannot read Python package version" in e for e in errors), errors
+            )
+
+    def test_missing_native_manifest_is_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            (root / "package.json").unlink()
+            self.assertTrue(any("missing native package version metadata" in e for e in check(root)))
 
 if __name__ == "__main__":
     unittest.main()

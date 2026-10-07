@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest import mock
 
-from scripts.check_changed_python import (
+from python.check_changed_python import (
     DEFAULT_CONFIG,
     MISSING_EXECUTABLE,
     ScopeError,
@@ -77,7 +77,7 @@ class CheckChangedPythonTests(unittest.TestCase):
             return real_run(command, **kwargs)
 
         with mock.patch(
-            "scripts.check_changed_python.subprocess.run", side_effect=fake_run
+            "python.check_changed_python.subprocess.run", side_effect=fake_run
         ):
             yield commands
 
@@ -182,6 +182,8 @@ class CheckChangedPythonTests(unittest.TestCase):
                         "ruff",
                         "check",
                         "--no-cache",
+                        "--no-fix",
+                        "--no-fix-only",
                         "--config",
                         DEFAULT_CONFIG,
                         "--",
@@ -275,7 +277,7 @@ class CheckChangedPythonTests(unittest.TestCase):
     def test_reports_missing_git_executable(self) -> None:
         error = io.StringIO()
         with mock.patch(
-            "scripts.check_changed_python.subprocess.run",
+            "python.check_changed_python.subprocess.run",
             side_effect=FileNotFoundError("git"),
         ):
             with contextlib.redirect_stderr(error):
@@ -294,7 +296,7 @@ class CheckChangedPythonTests(unittest.TestCase):
 
         error = io.StringIO()
         with mock.patch(
-            "scripts.check_changed_python.subprocess.run", side_effect=failing
+            "python.check_changed_python.subprocess.run", side_effect=failing
         ):
             with contextlib.redirect_stderr(error):
                 result = main([])
@@ -316,7 +318,7 @@ class CheckChangedPythonTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertEqual(
                 commands,
-                [["ruff", "check", "--no-cache", "--config", "configs/ruff.toml", "--", "base.py"]],
+                [["ruff", "check", "--no-cache", "--no-fix", "--no-fix-only", "--config", "configs/ruff.toml", "--", "base.py"]],
             )
 
     def test_cli_limits_ruff_to_changed_requested_paths(self) -> None:
@@ -355,6 +357,8 @@ class CheckChangedPythonTests(unittest.TestCase):
                         "ruff",
                         "check",
                         "--no-cache",
+                        "--no-fix",
+                        "--no-fix-only",
                         "--config",
                         DEFAULT_CONFIG,
                         "--",
@@ -386,6 +390,8 @@ class CheckChangedPythonTests(unittest.TestCase):
                         "ruff",
                         "check",
                         "--no-cache",
+                        "--no-fix",
+                        "--no-fix-only",
                         "--config",
                         DEFAULT_CONFIG,
                         "--",

@@ -1,0 +1,47 @@
+# Advisory repository documentation check; no hooks or CI integration.
+# Stable rules only. Keep findings visible; do not suppress rules to clear them.
+include = ["**/*.md"]
+exclude = [
+  ".git/**",
+  ".gjc/**",
+  "**/node_modules/**",
+  "**/.venv/**",
+  "**/venv/**",
+  "**/__pycache__/**",
+  "**/.pytest_cache/**",
+  "**/.mypy_cache/**",
+  "**/.ruff_cache/**",
+  "**/.seiso_cache/**",
+  "**/*.egg-info/**",
+  "**/build/**",
+  "**/dist/**",
+  "**/generated/**",
+]
+preview = false
+
+[lint]
+select = ["ALL"]
+
+[[kinds]]
+path = "README.md"
+kind = "readme"
+
+[[kinds]]
+path = "AGENTS.md"
+kind = "howto"
+
+[[kinds]]
+path = "docs/**"
+kind = "reference"
+
+[[kinds]]
+path = "docs/python-trial.md"
+kind = "howto"
+
+[[kinds]]
+path = "skills/*/SKILL.md"
+kind = "howto"
+
+[[kinds]]
+path = "python/routing/AGENTS.md"
+kind = "howto"

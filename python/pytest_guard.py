@@ -116,7 +116,7 @@ def ensure_prerequisites(config) -> dict:
     if "guard" not in selected:
         raise PrerequisiteError("pytest_guard requires explicit guard selection")
     required = _strings(policy.get("required"), "required")
-    bound = config.pluginmanager.hasplugin("pytest_required_ruff")
+    bound = config.pluginmanager.hasplugin("gajaestack.pytest_required_ruff")
     if bound or "required-ruff" in selected or "required_ruff_before_pytest" in fact:
         if (
             not bound

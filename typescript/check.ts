@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { existsSync, readFileSync, realpathSync, readdirSync, statSync } from "node:fs";
 import { resolve, relative, isAbsolute, extname, dirname, basename } from "node:path";
 
@@ -285,9 +286,15 @@ async function runChecks(quick: boolean, binding: boolean, timing: boolean): Pro
 							invalidation.files.has(path) ||
 							[...invalidation.dirs].some((dir) => path.startsWith(`${dir}/`)),
 					);
-					const expand = hits.length > 0 || (invalidation.unenumerable && changes.paths.length > 0);
+					// Installed shared code is ignored by consumer Git, including
+					// locally modified bytes and dependency upgrades. Without writing
+					// a baseline/cache we cannot prove it unchanged: conservatively
+					// cover the full declared lint scope on every installed invocation.
+					const installed = import.meta.path.split("/").includes("node_modules");
+					const expand = installed || hits.length > 0 || (invalidation.unenumerable && changes.paths.length > 0);
 					if (expand) {
 						const reasons = hits.map((path) => relative(root, path));
+						if (installed) reasons.push("installed shared package (no tracked code baseline)");
 						if (invalidation.unenumerable) reasons.push("files possibly covered by unenumerable Biome config dependencies");
 						console.log(`Quick scope expanded to full selected scope: changed ${reasons.join(", ")}`);
 					} else {
@@ -338,7 +345,7 @@ if (import.meta.main) {
 	const quick = args.filter((arg) => arg === "--quick").length;
 	const timing = args.filter((arg) => arg === "--timing").length;
 	if (args.some((arg) => arg !== "--quick" && arg !== "--timing") || quick > 1 || timing > 1) {
-		console.error("usage: bun .gajaestack/typescript/check.ts [--quick] [--timing]");
+		console.error("usage: bun run gajaestack-check [--quick] [--timing]");
 		process.exit(2);
 	}
 	process.exit(await check(quick > 0, false, timing > 0));
