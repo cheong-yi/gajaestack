@@ -6,7 +6,7 @@ One source-asset CLI serves Python and TypeScript. Reuse consumer tools, configs
 
 1. **Inspect.** Read the [entry point](../AGENTS.md), the [README](../README.md) and this guide, run `list`, and inspect the consumer's existing tools, native configuration and test entrypoints before recommending anything.
 2. **Select.** Recommend the smallest useful selection. Components stay independent: prerequisites are checked and refused when unmet, never expanded implicitly.
-3. **Reviewed facts, then preview.** Supply reviewed consumer facts first (templates are explicit and absent-only, described below), then run `adopt` without `--apply` and review each change's content, source and destination.
+3. **Reviewed facts, then preview.** Supply reviewed consumer facts first (templates are explicit and absent-only, described below), then run `adopt` without `--apply` and review each change's content, source and destination. Preview also names the one completion command your facts already declare (`[fact].test_command`) with their declared binding and required checks (bound checks count as covered only when the declared binding is activated in reviewed native configuration), and the managed `AGENTS.md` addendum span is rendered from those same facts so copied guidance carries that same command — copied bytes stay distinguishable from activation, no runner or cache is invented, and no wiring is claimed.
 4. **Approved assets, plus separately reviewed native wiring.** `--apply` replans and revalidates the selected asset changes against current bytes; the earlier preview is not an immutable transaction. Binding them into native configuration — pytest options/plugins, `bunfig.toml` preloads — is a separate, explicitly reviewed consumer change.
 5. **Valid pass and seeded rejection.** Run the configured native entrypoints: a valid pass over real scope, plus a deliberately seeded rejection proving the guard refuses what it should. A correctly asserted rejection passes; missing tools, empty scope and failed checks remain failures.
 
@@ -41,11 +41,13 @@ python3 /path/to/gajaestack/scripts/gajaestack.py adopt typescript \
 | `typescript` | `.gajaestack/typescript/check.ts`: selected native tsc/Biome checks hosted by Bun |
 | `typescript-guard` | `.gajaestack/typescript/preload.ts`: separately adopted Bun test binding; requires `typescript` |
 | `typescript-config` | `.gajaestack/typescript/tsconfig.json`: optional baseline to extend, never replaces root tsconfig |
-| `routing` | A delimited root `AGENTS.md` addendum; validates existing facts without rewriting them |
+| `routing` | A delimited root `AGENTS.md` addendum rendered from reviewed facts to carry the declared completion command and binding/checks; validates existing facts without rewriting them |
 
 The CLI never edits `package.json`, `tsconfig.json`, `biome.json`, `bunfig.toml`, pytest configuration or existing consumer facts. Review and explicitly adopt native wiring separately as an approved consumer change. Facts templates are explicit and absent-only: `--facts-template python` or `--facts-template typescript` writes a complete, schema-valid example only when `.gajaestack/routing.toml` does not exist, never overwriting or merging existing facts. The examples in this guide are complete files, not fragments — but a template example is not truth: consumer facts remain the single authority and must be reviewed for the consumer. A mixed Python/TypeScript selection needs one reviewed combined facts file; applying both templates in sequence is not a valid path. Bindings require prior facts: adopting `required-ruff` or `typescript-guard` validates existing facts first (the `_check_bindings` prerequisite check) and refuses when facts are absent, invalid, or do not explicitly select the binding.
 
 The CLI templates start unbound. The complete examples below instead illustrate reviewed binding selections; they are not byte-for-byte template output. The Python CLI template retains explicitly labeled RERG example paths, which must be reviewed rather than assumed to exist.
+
+The `routing` addendum source stores `{{test_command}}`, `{{declared_binding}}`, and `{{declared_checks}}` as template placeholders: read them as template tokens rendered from reviewed facts at adoption, never as executable facts, and adoption refuses to copy a source whose placeholders are missing or left unrendered. The addendum is a rendered snapshot: current consumer facts remain authoritative. After changing those facts, preview and explicitly re-adopt `routing` to refresh the managed command/check description without rewriting the facts.
 
 `.gajaestack/routing.toml` is the single consumer-owned facts authority. The helper validates existing facts without rewriting them. Component metadata does not install assets. Binding adoption requires declared prerequisites, which are never expanded implicitly — name `guard` and `ruff` (or `typescript`) in the same selection yourself, unless already adopted. Prerequisite removal is refused while its binding asset remains. Remove the binding explicitly and remove its native wiring as a reviewed consumer change; stale wiring fails rather than silently becoming a pass.
 
@@ -68,6 +70,8 @@ python .gajaestack/scripts/check_changed_python.py --full
 ```
 
 Full mode reads `[python].ruff_paths` and `ruff_config` from the facts below; `--path` cannot narrow completion. Quick mode's no-target result is **no coverage**, not lint success. Shared config/helper/facts changes and declared `--impact` paths expand quick checking to the full declared scope, not the whole repository. Full mode refuses empty/missing/escaping targets and preserves native Ruff failures. Paths outside selected scope remain unchecked. Ruff runs with `--no-cache` so the prerequisite itself does not create a checkout cache. The helper does not format or infer affected tests.
+
+Both modes accept `--timing` and honor `GAJAESTACK_TIMING=1`: phase elapsed time, counts, and exit status are reported on stderr. Timing is informational — it never changes which checks run, coverage, or exit status — and the environment form is the one that works under a native binding where no extra flag can be passed. Phase timing on stderr is the contract; exact line formatting is not.
 
 When the explicit native pytest binding below is active, the configured native test launch (`python -B -m pytest`) is the completion command: the bound full Ruff check runs before collection, so chaining `check_changed_python.py --full` first repeats completed lint work. Use `--full` as the completion check when no native test binding is adopted.
 
@@ -177,12 +181,15 @@ paths = ["src"]
 Required preload checks must also appear in `required` as `ts-typecheck` and/or `ts-lint`, as shown. Quick and completion commands:
 
 ```sh
-bun .gajaestack/typescript/check.ts --quick  # selected lint, NOT changed-only or typecheck
+bun .gajaestack/typescript/check.ts --quick  # changed-file lint intersection; expands on facts/Biome config/checker changes; never typecheck
 bun .gajaestack/typescript/check.ts          # selected tsc --noEmit, then lint
 bun test                                   # configured native test boundary
 ```
 
 For a bound consumer, `bun test` is the completion command: do not chain the standalone check first, which would repeat type/lint checks in the preload. Use the standalone completion check when no native test binding is adopted.
+Quick mode is a changed-file lint intersection: existing staged, unstaged, and untracked files intersected with the declared lint paths, and it never typechecks. Changes to the facts, the Biome configuration, or the checker itself expand a quick run to the full declared lint scope, so quick feedback cannot hide a policy-wide regression. An empty intersection is **no coverage**, not a lint pass. The checker accepts the same `--timing` / `GAJAESTACK_TIMING=1` contract as the Python helper: phase elapsed time, counts, and exit status on stderr, informational only.
+
+Quick discovery requires Git and fails visibly if changes cannot be read, including filenames that cannot be decoded as UTF-8; completion does not require Git. Rename origins participate in policy invalidation, while deleted files are not lint targets. Nested `biome.json`/`biome.jsonc` changes and tracked local `extends`/plugin dependencies invalidate the selection. Config dependencies that cannot be enumerated conservatively (including commented JSONC or package references) expand any changed working tree to full declared lint scope rather than guessing native config semantics.
 
 Typechecking uses the complete tsconfig file selection, not just lint paths. `--showConfig` establishes non-empty selected files; `--noEmit --incremental false` prevents compiler emission/build-info output. Composite projects incompatible with these flags fail natively rather than being rewritten. Biome uses explicit selected source files, does not format/write and does not hide unmatched-file failures. Missing tools, invalid configuration and empty selected scope fail visibly. No lint selected in quick mode means no coverage, not a typecheck pass.
 

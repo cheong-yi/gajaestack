@@ -114,6 +114,44 @@ class PythonMechanicalTests(unittest.TestCase):
         self.assertEqual(result.returncode, direct.returncode)
         self.assert_rejected_before_import(result)
 
+    def test_native_timing_preserves_rejection_and_checkout_bytes(self):
+        self.env["GAJAESTACK_TIMING"] = "1"
+        (self.root / "app.py").write_text("bad = undefined_name\n")
+        before = {
+            path.relative_to(self.root): path.read_bytes()
+            for path in self.root.rglob("*") if path.is_file()
+        }
+        result = self.run_native()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assert_rejected_before_import(result)
+        self.assertIn("F821", result.stdout + result.stderr)
+        self.assertIn("scope", result.stderr)
+        self.assertIn("ruff", result.stderr.lower())
+        self.assertIn("elapsed", result.stderr)
+        self.assertEqual(before, {
+            path.relative_to(self.root): path.read_bytes()
+            for path in self.root.rglob("*") if path.is_file()
+        })
+
+    def test_native_timing_pass_does_not_add_guard_writes(self):
+        self.env["GAJAESTACK_TIMING"] = "1"
+        (self.root / "conftest.py").write_text("")
+        (self.root / "tests/test_app.py").write_text(
+            "from app import twice\n"
+            "def test_positive():\n    assert twice(3) == 6\n"
+        )
+        before = {
+            path.relative_to(self.root): path.read_bytes()
+            for path in self.root.rglob("*") if path.is_file()
+        }
+        result = self.run_native()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("elapsed", result.stderr)
+        self.assertEqual(before, {
+            path.relative_to(self.root): path.read_bytes()
+            for path in self.root.rglob("*") if path.is_file()
+        })
+
     def test_guard_only_and_both_unbound_do_not_require_ruff(self):
         self.configure(bound=False)
         self.env["PATH"] = "/usr/bin:/bin"

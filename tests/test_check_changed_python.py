@@ -13,8 +13,11 @@ from unittest import mock
 from scripts.check_changed_python import (
     DEFAULT_CONFIG,
     MISSING_EXECUTABLE,
+    ScopeError,
     changed_python_files,
+    full_scope,
     main,
+    ruff_check,
 )
 
 
@@ -360,6 +363,244 @@ class CheckChangedPythonTests(unittest.TestCase):
                     ]
                 ],
             )
+
+    def test_timing_flag_reports_scope_discovery_and_ruff_phases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root, {"base.py": "base = 1\n"})
+            self.write_files(root, {"base.py": "base = 2\n"})
+
+            with self.fake_ruff() as commands:
+                with in_directory(root):
+                    output = io.StringIO()
+                    error = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        with contextlib.redirect_stderr(error):
+                            result = main(["--timing"])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(
+                commands,
+                [
+                    [
+                        "ruff",
+                        "check",
+                        "--no-cache",
+                        "--config",
+                        DEFAULT_CONFIG,
+                        "--",
+                        "base.py",
+                    ]
+                ],
+            )
+            self.assertNotIn("timing:", output.getvalue())
+            stderr = error.getvalue()
+            self.assertRegex(
+                stderr,
+                r"timing: scope discovery: elapsed=\d+\.\d{3}s \(files=1, exit=0\)",
+            )
+            self.assertRegex(
+                stderr, r"timing: ruff: elapsed=\d+\.\d{3}s \(files=1, exit=0\)"
+            )
+            self.assertEqual(stderr.count("timing:"), 2)
+
+    def test_timing_reports_ruff_failure_exit_status(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root, {"base.py": "base = 1\n"})
+            self.write_files(root, {"base.py": "base = 2\n"})
+
+            def fail(
+                command: list[str], **kwargs: object
+            ) -> subprocess.CompletedProcess[str]:
+                return subprocess.CompletedProcess(command, 3)
+
+            with self.fake_ruff(fail):
+                with in_directory(root):
+                    error = io.StringIO()
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        with contextlib.redirect_stderr(error):
+                            result = main(["--timing"])
+
+            self.assertEqual(result, 3)
+            stderr = error.getvalue()
+            self.assertRegex(
+                stderr,
+                r"timing: scope discovery: elapsed=\d+\.\d{3}s \(files=1, exit=0\)",
+            )
+            self.assertRegex(
+                stderr, r"timing: ruff: elapsed=\d+\.\d{3}s \(files=1, exit=3\)"
+            )
+
+    def test_timing_no_scope_reports_discovery_phase_without_ruff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root, {"base.py": "base = 1\n", "notes.txt": "text\n"})
+            self.write_files(root, {"notes.txt": "changed text\n"})
+
+            def must_not_run(
+                command: list[str], **kwargs: object
+            ) -> subprocess.CompletedProcess[str]:
+                raise AssertionError("ruff must not run without changed Python files")
+
+            with self.fake_ruff(must_not_run):
+                with in_directory(root):
+                    output = io.StringIO()
+                    error = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        with contextlib.redirect_stderr(error):
+                            result = main(["--timing"])
+
+            self.assertEqual(result, 0)
+            self.assertIn(
+                "No changed Python files; nothing to check.", output.getvalue()
+            )
+            self.assertNotIn("timing:", output.getvalue())
+            stderr = error.getvalue()
+            self.assertRegex(
+                stderr,
+                r"timing: scope discovery: elapsed=\d+\.\d{3}s \(files=0, exit=0\)",
+            )
+            self.assertNotIn("timing: ruff", stderr)
+            self.assertEqual(stderr.count("timing:"), 1)
+
+    def test_timing_full_mode_reports_scope_discovery_and_ruff_phases(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(
+                root,
+                {
+                    "base.py": "base = 1\n",
+                    "ruff.toml": "\n",
+                    ".gajaestack/routing.toml": (
+                        "[python]\n"
+                        "schema_version = 1\n"
+                        'ruff_paths = ["base.py"]\n'
+                        'ruff_config = "ruff.toml"\n'
+                    ),
+                },
+            )
+
+            with self.fake_ruff() as commands:
+                with in_directory(root):
+                    output = io.StringIO()
+                    error = io.StringIO()
+                    with contextlib.redirect_stdout(output):
+                        with contextlib.redirect_stderr(error):
+                            result = main(["--full", "--timing"])
+
+            self.assertEqual(result, 0)
+            self.assertIn("Full selected scope: 1 file(s)", output.getvalue())
+            self.assertEqual(commands[0][-1], "base.py")
+            stderr = error.getvalue()
+            self.assertRegex(
+                stderr,
+                r"timing: scope discovery: elapsed=\d+\.\d{3}s \(files=1, exit=0\)",
+            )
+            self.assertRegex(
+                stderr, r"timing: ruff: elapsed=\d+\.\d{3}s \(files=1, exit=0\)"
+            )
+            self.assertEqual(stderr.count("timing:"), 2)
+
+    def test_timing_env_times_direct_scope_and_ruff_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_files(
+                root,
+                {
+                    "base.py": "base = 1\n",
+                    "ruff.toml": "\n",
+                    ".gajaestack/routing.toml": (
+                        "[python]\n"
+                        "schema_version = 1\n"
+                        'ruff_paths = ["base.py"]\n'
+                        'ruff_config = "ruff.toml"\n'
+                    ),
+                },
+            )
+
+            error = io.StringIO()
+            with mock.patch.dict(os.environ, {"GAJAESTACK_TIMING": "1"}):
+                with self.fake_ruff():
+                    with contextlib.redirect_stderr(error):
+                        files, config = full_scope(
+                            root, root / ".gajaestack/routing.toml"
+                        )
+                        status = ruff_check(root, config, files)
+
+            self.assertEqual(status, 0)
+            stderr = error.getvalue()
+            self.assertRegex(
+                stderr,
+                r"timing: scope discovery: elapsed=\d+\.\d{3}s \(files=1, exit=0\)",
+            )
+            self.assertRegex(
+                stderr, r"timing: ruff: elapsed=\d+\.\d{3}s \(files=1, exit=0\)"
+            )
+            self.assertEqual(stderr.count("timing:"), 2)
+
+    def test_timing_scope_failure_reports_status_for_bound_calls(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            error = io.StringIO()
+            with mock.patch.dict(os.environ, {"GAJAESTACK_TIMING": "1"}):
+                with contextlib.redirect_stderr(error):
+                    with self.assertRaises(ScopeError):
+                        full_scope(root, root / ".gajaestack/routing.toml")
+
+            stderr = error.getvalue()
+            self.assertRegex(
+                stderr,
+                r"timing: scope discovery: elapsed=\d+\.\d{3}s \(files=0, exit=2\)",
+            )
+            self.assertEqual(stderr.count("timing:"), 1)
+
+    def test_timing_is_opt_in_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root, {"base.py": "base = 1\n"})
+            self.write_files(root, {"base.py": "base = 2\n"})
+
+            error = io.StringIO()
+            with mock.patch.dict(os.environ):
+                os.environ.pop("GAJAESTACK_TIMING", None)
+                with self.fake_ruff():
+                    with in_directory(root):
+                        with contextlib.redirect_stdout(io.StringIO()):
+                            with contextlib.redirect_stderr(error):
+                                result = main([])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(error.getvalue(), "")
+
+    def test_timing_env_value_other_than_one_is_inert(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.write_files(
+                root,
+                {
+                    "base.py": "base = 1\n",
+                    "ruff.toml": "\n",
+                    ".gajaestack/routing.toml": (
+                        "[python]\n"
+                        "schema_version = 1\n"
+                        'ruff_paths = ["base.py"]\n'
+                        'ruff_config = "ruff.toml"\n'
+                    ),
+                },
+            )
+
+            error = io.StringIO()
+            with mock.patch.dict(os.environ, {"GAJAESTACK_TIMING": "0"}):
+                with self.fake_ruff():
+                    with contextlib.redirect_stderr(error):
+                        files, config = full_scope(
+                            root, root / ".gajaestack/routing.toml"
+                        )
+                        status = ruff_check(root, config, files)
+
+            self.assertEqual(status, 0)
+            self.assertEqual(error.getvalue(), "")
 
 
 if __name__ == "__main__":

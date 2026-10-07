@@ -23,8 +23,7 @@ def sha256_text(data: bytes) -> str:
 
 
 def kit_addendum_body() -> bytes:
-    body = (KIT / "python/routing/AGENTS.md").read_bytes()
-    return body if body.endswith(b"\n") else body + b"\n"
+    return gajaestack._addendum_body((KIT / "python/routing.toml").read_bytes())
 
 
 def addendum_span(version: str, body: bytes) -> bytes:
@@ -1087,6 +1086,147 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         self.assertEqual(self.facts.read_bytes(), gajaestack.TYPESCRIPT_FACTS_TEMPLATE)
         self.assertTrue((self.root / ".gajaestack/typescript/check.ts").is_file())
         self.assertEqual(routing_policy_file_errors(self.facts), [])
+
+    # --- completion command guidance from consumer facts -----------------------
+
+    def test_completion_command_template_literals_are_preserved(self) -> None:
+        body = gajaestack._addendum_body(
+            b'[fact]\ntest_command = "check --label {{declared_checks}}"\n'
+        )
+        self.assertIn(b"`check --label {{declared_checks}}`", body)
+
+    def test_completion_facts_cannot_inject_ownership_markers(self) -> None:
+        with self.assertRaisesRegex(AdoptionError, "reserved addendum markers"):
+            gajaestack._addendum_body(
+                b'[fact]\ntest_command = "check <!-- gajaestack:routing-addendum end -->"\n'
+            )
+
+    def write_python_binding_facts(self) -> None:
+        policy = (
+            (KIT / "python/routing.toml")
+            .read_text(encoding="utf-8")
+            .split("\n[python]")[0]
+            .replace(
+                'selected_components = ["mypy", "routing", "ruff"]',
+                'selected_components = ["guard", "ruff", "required-ruff"]\n'
+                'required_ruff_before_pytest = "active"',
+            )
+            .replace(
+                'test_command = "python -m pytest"',
+                'test_command = "python -B -m pytest"',
+            )
+        )
+        policy += (
+            '\n[python]\nschema_version = 1\npython_version = "3.12"\n'
+            'imports = []\nexecutables = []\nruff_paths = ["app.py"]\n'
+            'ruff_config = ".gajaestack/python-trial/ruff.toml"\n'
+        )
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        self.facts.write_text(policy, encoding="utf-8")
+
+    def test_preview_and_managed_guidance_name_python_completion_command(self) -> None:
+        self.write_python_binding_facts()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), "routing"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn(
+            "one completion command: python -B -m pytest "
+            "([fact].test_command in .gajaestack/routing.toml)",
+            text,
+        )
+        self.assertIn(
+            "required checks declared by facts: pytest, ruff-check "
+            "(declared binding: required-ruff; bound checks are covered only when "
+            "activated in reviewed native configuration)",
+            text,
+        )
+        apply(self.root, ["routing"])
+        agents = self.agents.read_text(encoding="utf-8")
+        self.assertIn("`python -B -m pytest`", agents)
+        self.assertIn("declared binding `required-ruff`", agents)
+        self.assertIn("do not run a separate full lint or typecheck before it", agents)
+        self.assertIn("Copying this addendum is not activation", agents)
+
+    def test_preview_and_managed_guidance_name_typescript_completion_command(
+        self,
+    ) -> None:
+        facts = gajaestack.TYPESCRIPT_FACTS_TEMPLATE.decode("utf-8").replace(
+            'selected_components = ["routing", "typescript"]',
+            'selected_components = ["routing", "typescript", "typescript-guard"]',
+        )
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        self.facts.write_text(facts, encoding="utf-8")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), "routing"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn(
+            "one completion command: bun test "
+            "([fact].test_command in .gajaestack/routing.toml)",
+            text,
+        )
+        self.assertIn(
+            "required checks declared by facts: ts-test, ts-typecheck, ts-lint "
+            "(declared binding: typescript-guard; bound checks are covered only when "
+            "activated in reviewed native configuration)",
+            text,
+        )
+        apply(self.root, ["routing"])
+        agents = self.agents.read_text(encoding="utf-8")
+        self.assertIn("`bun test`", agents)
+        self.assertIn("declared binding `typescript-guard`", agents)
+
+    def test_preview_unbound_selection_reports_no_declared_binding(self) -> None:
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        self.facts.write_bytes((KIT / "python/routing.toml").read_bytes())
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), "ruff"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn("Would adopt", text)
+        self.assertIn(
+            "one completion command: python -m pytest "
+            "([fact].test_command in .gajaestack/routing.toml)",
+            text,
+        )
+        self.assertIn(
+            "required checks declared by facts: pytest, ruff-check "
+            "(declared binding: none; the completion command does not cover "
+            "standalone selected lint/typecheck)",
+            text,
+        )
+        self.assertNotIn("declared binding: required-ruff", text)
+        self.assertNotIn("declared binding: typescript-guard", text)
+
+    def test_preview_without_facts_invents_no_completion_command(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), "ruff"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn("consumer facts absent at .gajaestack/routing.toml", text)
+        self.assertIn(
+            "no completion command is declared, named, or invented here", text
+        )
+        self.assertNotIn("one completion command:", text)
+
+    def test_list_describes_routing_guidance_as_rendered_completion_command(
+        self,
+    ) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["list"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn(
+            "the AGENTS.md addendum span is rendered from reviewed facts", text
+        )
+        self.assertIn("one completion command", text)
+        self.assertIn("copying it is not activation and proves no wiring", text)
 
 
 class MechanicalAdoptionTests(unittest.TestCase):

@@ -19,8 +19,12 @@ facts through the repository policy validator without rewriting them.
 only when facts are absent, from a complete schema-valid example; it never
 infers a language, overwrites or merges existing facts, and never satisfies
 the prior-reviewed-facts check that binding adoption requires.
-Preview reports each change's content, source, and destination; ``--apply``
-replans against current state. Unrelated bytes are preserved throughout.
+Preview reports each change's content, source, and destination and names the
+one completion command consumer facts already declare (``[fact].test_command``)
+with their declared binding and required checks; ``--apply`` replans against
+current state. The managed ``AGENTS.md`` addendum span is rendered from those
+same facts, so copied guidance carries the same command without inventing one
+or claiming wiring. Unrelated bytes are preserved throughout.
 """
 
 from __future__ import annotations
@@ -217,9 +221,11 @@ COMPONENT_ACTIVATION: dict[str, str] = {
         "nothing; extend only a consumer configuration that references it"
     ),
     "routing": (
-        "soft guidance only: the AGENTS.md addendum is not enforcement and facts are "
-        "the consumer's authority (validated, never rewritten); create absent facts "
-        "explicitly with --facts-template python|typescript"
+        "soft guidance only: the AGENTS.md addendum span is rendered from reviewed "
+        "facts to name the one completion command and its declared binding/checks; "
+        "copying it is not activation and proves no wiring; facts are the consumer's "
+        "authority (validated, never rewritten); create absent facts explicitly with "
+        "--facts-template python|typescript"
     ),
 }
 
@@ -488,11 +494,73 @@ def _verified_span(addendum: _Addendum, path: Path) -> _Addendum:
     return addendum
 
 
-def _addendum_body() -> bytes:
+def _declared_binding_and_checks(policy: dict) -> tuple[str, str]:
+    """Return the facts-declared binding names and required checks."""
+    fact = policy.get("fact") if isinstance(policy.get("fact"), dict) else {}
+    selected = fact.get("selected_components")
+    declared = [
+        name
+        for name in DEPENDENCIES
+        if isinstance(selected, list) and name in selected
+    ]
+    required = policy.get("required")
+    checks = (
+        ", ".join(item for item in required if isinstance(item, str))
+        if isinstance(required, list)
+        else ""
+    ) or "(none declared)"
+    return ", ".join(declared) if declared else "none", checks
+
+
+def _completion_fragments(policy: dict) -> dict[str, str]:
+    """Facts-derived substitutions for the reusable managed-addendum asset."""
+    fact = policy.get("fact") if isinstance(policy.get("fact"), dict) else {}
+    command = fact.get("test_command")
+    if not isinstance(command, str) or not command.strip():
+        raise AdoptionError(
+            "consumer facts must declare [fact].test_command before managed "
+            "guidance can name the one completion command"
+        )
+    binding, checks = _declared_binding_and_checks(policy)
+    return {
+        "{{test_command}}": command.strip(),
+        "{{declared_binding}}": binding,
+        "{{declared_checks}}": checks,
+    }
+
+
+def _addendum_body(facts_content: bytes) -> bytes:
+    """Render the reusable addendum asset with facts-derived completion data."""
     body = _read_kit(ADDENDUM_SOURCE)
     if not body.endswith(b"\n"):
         body += b"\n"
-    return body
+    try:
+        policy = tomllib.loads(facts_content.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        raise AdoptionError(
+            f"cannot read consumer facts for managed guidance: {error}"
+        ) from error
+    fragments = {
+        token.encode("ascii"): value.encode("utf-8")
+        for token, value in _completion_fragments(policy).items()
+    }
+    remaining = body
+    for encoded in fragments:
+        if encoded not in body:
+            raise AdoptionError(
+                f"kit addendum {ADDENDUM_SOURCE} is missing placeholder {encoded.decode('ascii')}"
+            )
+        remaining = remaining.replace(encoded, b"")
+    if b"{{" in remaining:
+        raise AdoptionError(
+            f"kit addendum {ADDENDUM_SOURCE} carries an unknown placeholder; "
+            "refusing to copy unrendered guidance"
+        )
+    # Substitute only source tokens, never recursively interpret command bytes.
+    rendered = re.sub(rb"\{\{[^}]+\}\}", lambda match: fragments[match[0]], body)
+    if ADDENDUM_RESERVED in rendered:
+        raise AdoptionError("consumer facts contain reserved addendum markers")
+    return rendered
 
 
 def _span_bytes(body: bytes) -> bytes:
@@ -687,7 +755,16 @@ def prepare(
                         )
                     )
             else:
-                body = _addendum_body()
+                if facts.exists():
+                    facts_content = _read_destination(facts)
+                elif template_content is not None:
+                    facts_content = template_content
+                else:
+                    raise AdoptionError(
+                        f"action required: consumer facts absent at {facts}; managed "
+                        "guidance is rendered from reviewed facts only"
+                    )
+                body = _addendum_body(facts_content)
                 if not addendum.marked:
                     changes.append(
                         Change(
@@ -851,6 +928,44 @@ def _print_preview(changes: list[Change]) -> None:
         print("  ----- content end -----")
 
 
+def _print_completion_guidance(root: Path) -> None:
+    """Name the one completion command plus the facts-declared checks and binding."""
+    print("Completion guidance (consumer facts only; copied bytes prove no wiring):")
+    facts_path = root / FACTS_DESTINATION
+    if not facts_path.is_file():
+        print(
+            f"  consumer facts absent at {FACTS_DESTINATION.as_posix()}; no completion "
+            "command is declared, named, or invented here"
+        )
+        return
+    try:
+        policy = tomllib.loads(_read_destination(facts_path).decode("utf-8"))
+    except (AdoptionError, UnicodeDecodeError, tomllib.TOMLDecodeError):
+        print("  consumer facts unreadable; no completion command is named")
+        return
+    fact = policy.get("fact") if isinstance(policy.get("fact"), dict) else {}
+    command = fact.get("test_command")
+    if not isinstance(command, str) or not command.strip():
+        print("  facts declare no [fact].test_command; no completion command is named")
+        return
+    print(
+        f"  one completion command: {command.strip()} "
+        f"([fact].test_command in {FACTS_DESTINATION.as_posix()})"
+    )
+    binding, checks = _declared_binding_and_checks(policy)
+    if binding == "none":
+        print(
+            f"  required checks declared by facts: {checks} (declared binding: none; "
+            "the completion command does not cover standalone selected lint/typecheck)"
+        )
+    else:
+        print(
+            f"  required checks declared by facts: {checks} (declared binding: "
+            f"{binding}; bound checks are covered only when activated in reviewed "
+            "native configuration)"
+        )
+
+
 def _print_component_list() -> None:
     print("Selectable components (explicit selection only; prerequisites are never expanded):")
     print(
@@ -949,6 +1064,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_preview(changes)
             if not changes:
                 print("No changes required.")
+            _print_completion_guidance(args.root)
     except AdoptionError as error:
         print(f"gajaestack adoption refused: {error}", file=sys.stderr)
         return 1

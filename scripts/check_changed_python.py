@@ -6,11 +6,11 @@ Usage in a consumer checkout after selecting the ``ruff`` component::
     # quick mode (default): changed Python files in the Git worktree
     python .gajaestack/scripts/check_changed_python.py [--config PATH] \
         [--path REPOSITORY_PATH]... [--impact REPOSITORY_PATH]... \
-        [--facts PATH]
+        [--facts PATH] [--timing]
 
     # full mode: the complete selected scope declared in the facts file
     python .gajaestack/scripts/check_changed_python.py --full [--config PATH] \
-        [--facts PATH]
+        [--facts PATH] [--timing]
 
 Quick mode discovers ``.py`` files with staged or unstaged tracked changes
 plus untracked non-ignored files in the current Git worktree, skips deleted
@@ -37,6 +37,16 @@ facts, or a working directory that differs from a declared ``root`` reject
 with exit status 2. If ``--config`` is given explicitly it overrides
 ``[python].ruff_config`` in full mode.
 
+Timing is opt-in with ``--timing`` or ``GAJAESTACK_TIMING=1`` (the
+environment variable also times direct bound calls to ``full_scope`` and
+``ruff_check``, which the pytest binding invokes without going through
+``main``). A timed run reports exactly one line per phase to stderr, always
+as ``timing: <phase>: elapsed=<seconds>s (files=<count>, exit=<status>)``:
+``scope discovery`` with exit 0 when the checked file list resolves, exit 2
+when the selected scope is unusable, or Git's status when discovery fails;
+``ruff`` with Ruff's status after it finishes. Timing never changes stdout
+output, native exit statuses, or files in the checkout.
+
 Exit status:
 
 * ``0`` — quick no-op (no coverage reported) or Ruff found no problems;
@@ -52,6 +62,7 @@ import argparse
 import os
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -118,17 +129,40 @@ def changed_python_files(root: Path) -> list[str]:
     ]
 
 
-def ruff_check(root: Path, config: str, files: list[str]) -> int:
+def timing_enabled() -> bool:
+    """Timing is opt-in via GAJAESTACK_TIMING=1 or the --timing flag."""
+    return os.environ.get("GAJAESTACK_TIMING") == "1"
+
+
+def report_timing(phase: str, started: float, files: int, status: int) -> None:
+    """Print one opt-in phase timing line to stderr."""
+    elapsed = time.perf_counter() - started
+    print(
+        f"timing: {phase}: elapsed={elapsed:.3f}s (files={files}, exit={status})",
+        file=sys.stderr,
+    )
+
+
+def ruff_check(
+    root: Path, config: str, files: list[str], timing: bool | None = None
+) -> int:
+    if timing is None:
+        timing = timing_enabled()
+    started = time.perf_counter()
     if not files:
         print("error: empty Ruff scope; no coverage", file=sys.stderr)
-        return INVALID_SCOPE
-    command = ["ruff", "check", "--no-cache", "--config", config, "--", *files]
-    try:
-        completed = subprocess.run(command, cwd=root)
-    except FileNotFoundError:
-        print("error: ruff executable not found", file=sys.stderr)
-        return MISSING_EXECUTABLE
-    return completed.returncode
+        status = INVALID_SCOPE
+    else:
+        command = ["ruff", "check", "--no-cache", "--config", config, "--", *files]
+        try:
+            completed = subprocess.run(command, cwd=root)
+            status = completed.returncode
+        except FileNotFoundError:
+            print("error: ruff executable not found", file=sys.stderr)
+            status = MISSING_EXECUTABLE
+    if timing:
+        report_timing("ruff", started, len(files), status)
+    return status
 
 
 def read_facts(facts_path: Path) -> dict:
@@ -145,6 +179,33 @@ def read_facts(facts_path: Path) -> dict:
 
 
 def full_scope(
+    root: Path,
+    facts_path: Path,
+    config_override: str | None = None,
+    timing: bool | None = None,
+) -> tuple[list[str], str]:
+    """Resolve the full selected scope, optionally timing its discovery phase.
+
+    With timing enabled (``--timing`` or ``GAJAESTACK_TIMING=1``), exactly
+    one ``scope discovery`` line reaches stderr: exit 0 with the file count
+    on success, exit 2 with an empty count when :class:`ScopeError` rejects
+    the scope.
+    """
+    if timing is None:
+        timing = timing_enabled()
+    if not timing:
+        return _resolve_full_scope(root, facts_path, config_override)
+    started = time.perf_counter()
+    try:
+        files, config = _resolve_full_scope(root, facts_path, config_override)
+    except ScopeError:
+        report_timing("scope discovery", started, 0, INVALID_SCOPE)
+        raise
+    report_timing("scope discovery", started, len(files), 0)
+    return files, config
+
+
+def _resolve_full_scope(
     root: Path, facts_path: Path, config_override: str | None = None
 ) -> tuple[list[str], str]:
     """Resolve the full selected scope declared in ``[python]`` of the facts.
@@ -291,7 +352,17 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="run the full selected scope declared in [python] of the facts file",
     )
+    parser.add_argument(
+        "--timing",
+        action="store_true",
+        help=(
+            "report scope discovery and Ruff phase elapsed times to stderr "
+            "(also enabled by GAJAESTACK_TIMING=1)"
+        ),
+    )
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
+    timing = args.timing or timing_enabled()
 
     if args.full and args.path:
         parser.error("--full selects the declared scope and cannot be combined with --path")
@@ -305,20 +376,25 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.full:
         try:
-            files, config = full_scope(Path.cwd(), facts_path, args.config)
+            files, config = full_scope(
+                Path.cwd(), facts_path, args.config, timing=timing
+            )
         except ScopeError as error:
             print(f"error: {error}", file=sys.stderr)
             return INVALID_SCOPE
         print(f"Full selected scope: {len(files)} file(s) from {facts_path}")
-        return ruff_check(Path.cwd(), config, files)
+        return ruff_check(Path.cwd(), config, files, timing=timing)
 
     quick_config = args.config if args.config is not None else DEFAULT_CONFIG
 
+    discovery_started = time.perf_counter()
     try:
         root = repository_root()
         changed = changed_paths(root)
     except GitError as error:
         print(f"error: {error}", file=sys.stderr)
+        if timing:
+            report_timing("scope discovery", discovery_started, 0, error.code)
         return error.code
 
     # Shared policy paths whose changes invalidate changed-only scope: the
@@ -347,12 +423,20 @@ def main(argv: list[str] | None = None) -> int:
     if matched:
         print(f"Quick scope expanded to full selected scope: changed {', '.join(matched)}")
         try:
-            files, config = full_scope(root, facts_path, args.config)
+            # Quick-mode discovery is timed in main so Git discovery counts
+            # toward the single scope discovery phase line.
+            files, config = full_scope(root, facts_path, args.config, timing=False)
         except ScopeError as error:
             print(f"error: {error}", file=sys.stderr)
+            if timing:
+                report_timing(
+                    "scope discovery", discovery_started, 0, INVALID_SCOPE
+                )
             return INVALID_SCOPE
+        if timing:
+            report_timing("scope discovery", discovery_started, len(files), 0)
         print(f"Full selected scope: {len(files)} file(s) from {facts_path}")
-        return ruff_check(root, config, files)
+        return ruff_check(root, config, files, timing=timing)
 
     files = [
         path
@@ -364,17 +448,19 @@ def main(argv: list[str] | None = None) -> int:
         files = [path for path in files if any(
             _matches([path], selector) for selector in args.path
         )]
-        if not files:
-            print("No changed Python files match the requested paths; nothing to check.")
-            print("No coverage; this no-op is not a lint pass.")
-            return 0
+
+    if timing:
+        report_timing("scope discovery", discovery_started, len(files), 0)
 
     if not files:
-        print("No changed Python files; nothing to check.")
+        if args.path:
+            print("No changed Python files match the requested paths; nothing to check.")
+        else:
+            print("No changed Python files; nothing to check.")
         print("No coverage; this no-op is not a lint pass.")
         return 0
 
-    return ruff_check(root, quick_config, files)
+    return ruff_check(root, quick_config, files, timing=timing)
 
 
 if __name__ == "__main__":

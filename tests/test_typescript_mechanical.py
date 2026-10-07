@@ -30,13 +30,22 @@ NATIVE_TOOLS = not MISSING_PREREQS
 NODE_MODULES_PATH = Path(NODE_MODULES).resolve() if NODE_MODULES else None
 
 TIMEOUT = 180
+GIT_AVAILABLE = shutil.which("git") is not None
+REQUIRES_GIT_REASON = (
+    PREREQ_REASON
+    if not NATIVE_TOOLS
+    else "git executable is required for quick-mode tests"
+)
+requires_native_git = unittest.skipUnless(
+    NATIVE_TOOLS and GIT_AVAILABLE, REQUIRES_GIT_REASON
+)
 
 GOOD_TS = 'export const answer: number = 42;\n'
 TYPE_ERROR_TS = 'export const wrong: number = "not a number";\n'
 LINT_ERROR_TS = "export function observe(): void {\n\tdebugger;\n}\n"
 
 ENTRY_PATH = ".gajaestack/typescript/check.ts"
-USAGE_TEXT = "usage: bun .gajaestack/typescript/check.ts [--quick]"
+USAGE_TEXT = "usage: bun .gajaestack/typescript/check.ts [--quick] [--timing]"
 
 
 def toml_list(items: list[str]) -> str:
@@ -50,6 +59,7 @@ def routing_text(
     typecheck: bool = True,
     lint: bool = True,
     paths: list[str] | None = None,
+    biome_config: str = "biome.json",
 ) -> str:
     selected = ["typescript", "typescript-guard"] if selected is None else selected
     required = ["ts-typecheck", "ts-lint"] if required is None else required
@@ -66,7 +76,7 @@ def routing_text(
         f"typecheck = {'true' if typecheck else 'false'}\n"
         f"lint = {'true' if lint else 'false'}\n"
         'tsconfig = "tsconfig.json"\n'
-        'biome_config = "biome.json"\n'
+        f'biome_config = "{biome_config}"\n'
         f"paths = {toml_list(paths)}\n"
     )
 
@@ -152,7 +162,7 @@ def build_consumer(
         )
 
 
-def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+def _run(cmd: list[str], cwd: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         cmd,
         cwd=cwd,
@@ -161,15 +171,16 @@ def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
         errors="replace",
         timeout=TIMEOUT,
         check=False,
+        env=env,
     )
 
 
-def run_entry(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    return _run([BUN, ENTRY_PATH, *args], root)
+def run_entry(root: Path, *args: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return _run([BUN, ENTRY_PATH, *args], root, env=env)
 
 
-def run_guard(root: Path) -> subprocess.CompletedProcess[str]:
-    return _run([BUN, "test"], root)
+def run_guard(root: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+    return _run([BUN, "test"], root, env=env)
 
 
 def run_tool(root: Path, tool: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -200,6 +211,50 @@ def combined(process: subprocess.CompletedProcess[str]) -> str:
     return process.stdout + process.stderr
 
 
+def git_env() -> dict[str, str]:
+    """Isolated git configuration so host identity or hooks cannot skew status."""
+    env = dict(os.environ)
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_CONFIG_GLOBAL"] = os.devnull
+    env["GIT_CONFIG_SYSTEM"] = os.devnull
+    return env
+
+
+def git(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
+    return _run(["git", *args], cwd, env=git_env())
+
+
+def git_init_baseline(root: Path) -> None:
+    """Commit the whole consumer state so quick mode starts from a clean status."""
+    steps = (
+        ("init", "-q"),
+        ("add", "-A"),
+        (
+            "-c",
+            "user.name=gajaestack-test",
+            "-c",
+            "user.email=gajaestack-tests@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "baseline",
+        ),
+    )
+    for args in steps:
+        result = git(*args, cwd=root)
+        if result.returncode != 0:
+            raise AssertionError(f"git {' '.join(args)} failed: {combined(result)}")
+
+
+def tree_snapshot(root: Path) -> set[str]:
+    """Files and directories under root except .git; index refresh is asserted separately."""
+    return {
+        str(path.relative_to(root))
+        for path in root.rglob("*")
+        if ".git" not in path.relative_to(root).parts
+    }
+
+
 @unittest.skipUnless(NATIVE_TOOLS, PREREQ_REASON)
 class NativeConsumerTestCase(unittest.TestCase):
     def setUp(self) -> None:
@@ -226,7 +281,7 @@ class NativeConsumerTestCase(unittest.TestCase):
 
 
 class TypeScriptCheckEntryTests(NativeConsumerTestCase):
-    def test_completion_clean_pass_and_quick_lint_only(self) -> None:
+    def test_completion_clean_pass(self) -> None:
         build_consumer(self.root)
         full = run_entry(self.root)
         text = combined(full)
@@ -237,13 +292,6 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
         self.assertIsNotNone(lint, text)
         self.assertGreater(int(typecheck.group(1)), 0, text)
         self.assertGreater(int(lint.group(1)), 0, text)
-
-        quick = run_entry(self.root, "--quick")
-        quick_text = combined(quick)
-        self.assertEqual(quick.returncode, 0, quick_text)
-        quick_lint = re.search(r"Lint: (\d+) selected source files", quick_text)
-        self.assertIsNotNone(quick_lint, quick_text)
-        self.assertNotIn("Typecheck:", quick_text)
 
     def test_type_failure_matches_native_status_and_fails_fast(self) -> None:
         build_consumer(
@@ -262,8 +310,11 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
         self.assertIn("Typecheck:", text)
         self.assertNotIn("Lint:", text)
 
+    @requires_native_git
     def test_lint_failure_matches_native_status_in_quick_mode(self) -> None:
-        build_consumer(self.root, sources={"index.ts": GOOD_TS, "bad-lint.ts": LINT_ERROR_TS})
+        build_consumer(self.root, sources={"index.ts": GOOD_TS})
+        git_init_baseline(self.root)
+        (self.root / "src" / "bad-lint.ts").write_text(LINT_ERROR_TS, encoding="utf-8")
         native = direct_lint(self.root)
         self.assertNotEqual(native.returncode, 0, combined(native))
 
@@ -272,7 +323,7 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
         self.assertEqual(entry.returncode, native.returncode, text)
         self.assertNotEqual(entry.returncode, 0, text)
         self.assertIn("bad-lint", text)
-        self.assertIn("Lint:", text)
+        self.assertIn("Lint: 1 selected source files", text)
         self.assertNotIn("Typecheck:", text)
 
     def test_missing_or_malformed_config_rejected(self) -> None:
@@ -355,12 +406,311 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
 
     def test_unknown_argument_rejected_with_usage(self) -> None:
         build_consumer(self.root)
-        for args in (["--bogus"], ["--quick", "extra"]):
+        for args in (
+            ["--bogus"],
+            ["--quick", "extra"],
+            ["--quick", "--quick"],
+            ["--timing", "--timing"],
+        ):
             with self.subTest(args=args):
                 process = run_entry(self.root, *args)
                 text = combined(process)
                 self.assertEqual(process.returncode, 2, text)
                 self.assertIn(USAGE_TEXT, text)
+
+    @requires_native_git
+    def test_quick_lints_only_changed_declared_files(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS, "other.ts": GOOD_TS})
+        git_init_baseline(self.root)
+        (self.root / "src" / "index.ts").write_text(GOOD_TS + "// touched\n", encoding="utf-8")
+        index_state = (self.root / ".git" / "index").stat().st_mtime_ns
+        process = run_entry(self.root, "--quick")
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        lint = re.search(r"Lint: (\d+) selected source files", text)
+        self.assertIsNotNone(lint, text)
+        self.assertEqual(int(lint.group(1)), 1, text)
+        self.assertNotIn("Typecheck:", text)
+        self.assertNotIn("Quick scope expanded", text)
+        self.assertEqual(
+            index_state,
+            (self.root / ".git" / "index").stat().st_mtime_ns,
+            "quick mode must not refresh the git index",
+        )
+
+    @requires_native_git
+    def test_quick_without_changed_files_reports_no_coverage(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS, "other.ts": GOOD_TS})
+        git_init_baseline(self.root)
+        process = run_entry(self.root, "--quick")
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertIn("No changed files; nothing to check.", text)
+        self.assertIn("No coverage; this no-op is not a lint pass.", text)
+        self.assertNotIn("Quick scope expanded", text)
+        self.assertNotIn("Lint:", text)
+        self.assertNotIn("Typecheck:", text)
+
+    @requires_native_git
+    def test_quick_ignores_changed_files_outside_declared_paths(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS, "other.ts": GOOD_TS})
+        git_init_baseline(self.root)
+        (self.root / "docs").mkdir()
+        (self.root / "docs" / "note.ts").write_text(LINT_ERROR_TS, encoding="utf-8")
+        process = run_entry(self.root, "--quick")
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertIn(
+            "No changed files match the selected lint paths; nothing to check.", text
+        )
+        self.assertIn("No coverage; this no-op is not a lint pass.", text)
+        self.assertNotIn("Quick scope expanded", text)
+        self.assertNotIn("Lint:", text)
+
+    @requires_native_git
+    def test_quick_expands_to_full_scope_on_invalidating_changes(self) -> None:
+        sources = {"index.ts": GOOD_TS, "other.ts": GOOD_TS}
+        cases = (
+            "routing facts",
+            "biome config",
+            "checker script",
+            "biome config dependency",
+            "unenumerable biome config",
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    routing = (
+                        routing_text(biome_config="biome.jsonc")
+                        if case == "unenumerable biome config"
+                        else routing_text()
+                    )
+                    build_consumer(root, routing=routing, sources=sources)
+                    if case == "biome config dependency":
+                        (root / "biome.json").write_text(
+                            json.dumps(
+                                {
+                                    "linter": {"enabled": True},
+                                    "formatter": {"enabled": False},
+                                    "extends": ["./biome.base.json"],
+                                }
+                            )
+                            + "\n",
+                            encoding="utf-8",
+                        )
+                        (root / "biome.base.json").write_text("{}\n", encoding="utf-8")
+                    if case == "unenumerable biome config":
+                        (root / "biome.jsonc").write_text(
+                            "// comments keep JSON.parse from reading this config\n"
+                            '{"linter": {"enabled": true}, "formatter": {"enabled": false}}\n',
+                            encoding="utf-8",
+                        )
+                    git_init_baseline(root)
+                    if case == "routing facts":
+                        target = root / ".gajaestack" / "routing.toml"
+                        target.write_text(
+                            target.read_text(encoding="utf-8") + "# touched\n",
+                            encoding="utf-8",
+                        )
+                        trigger = ".gajaestack/routing.toml"
+                    elif case == "biome config":
+                        target = root / "biome.json"
+                        target.write_text(
+                            json.dumps(json.loads(target.read_text(encoding="utf-8")), indent=4)
+                            + "\n",
+                            encoding="utf-8",
+                        )
+                        trigger = "biome.json"
+                    elif case == "checker script":
+                        target = root / ".gajaestack" / "typescript" / "check.ts"
+                        target.write_text(
+                            target.read_text(encoding="utf-8") + "\n// touched\n",
+                            encoding="utf-8",
+                        )
+                        trigger = ".gajaestack/typescript/check.ts"
+                    elif case == "biome config dependency":
+                        (root / "biome.base.json").write_text(
+                            '{"linter": {"enabled": true}}\n', encoding="utf-8"
+                        )
+                        trigger = "biome.base.json"
+                    else:
+                        (root / "src" / "index.ts").write_text(
+                            GOOD_TS + "// touched\n", encoding="utf-8"
+                        )
+                        trigger = "unenumerable Biome config dependencies"
+                    process = run_entry(root, "--quick")
+                    text = combined(process)
+                    self.assertEqual(process.returncode, 0, text)
+                    self.assertIn("Quick scope expanded to full selected scope", text)
+                    self.assertIn(trigger, text)
+                    self.assertIn("Lint: 2 selected source files", text)
+                    self.assertNotIn("Typecheck:", text)
+
+    @requires_native_git
+    def test_quick_expands_on_changed_nested_biome_named_config(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS, "other.ts": GOOD_TS})
+        nested = self.root / "src" / "nested"
+        nested.mkdir()
+        (nested / "biome.json").write_text("{}\n", encoding="utf-8")
+        git_init_baseline(self.root)
+        (nested / "biome.json").write_text('{"linter": {"enabled": true}}\n', encoding="utf-8")
+        process = run_entry(self.root, "--quick")
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertIn("Quick scope expanded to full selected scope", text)
+        self.assertIn("src/nested/biome.json", text)
+        self.assertIn("Lint: 2 selected source files", text)
+
+    @requires_native_git
+    def test_quick_expands_when_a_biome_named_config_is_renamed_away(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS, "other.ts": GOOD_TS})
+        nested = self.root / "src" / "nested"
+        nested.mkdir()
+        (nested / "biome.json").write_text("{}\n", encoding="utf-8")
+        git_init_baseline(self.root)
+        moved = git("mv", "src/nested/biome.json", "src/nested/renamed.json", cwd=self.root)
+        self.assertEqual(moved.returncode, 0, combined(moved))
+        process = run_entry(self.root, "--quick")
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertIn("Quick scope expanded to full selected scope", text)
+        self.assertIn("src/nested/biome.json", text)
+        self.assertIn("Lint: 2 selected source files", text)
+
+    @requires_native_git
+    def test_quick_expands_on_local_plugin_dependency_change(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS, "other.ts": GOOD_TS})
+        (self.root / "plugins").mkdir()
+        (self.root / "plugins" / "local.grit").write_text(
+            "pattern stale { `foo` }\n", encoding="utf-8"
+        )
+        (self.root / "biome.json").write_text(
+            json.dumps(
+                {
+                    "linter": {"enabled": True},
+                    "formatter": {"enabled": False},
+                    "plugins": ["./plugins/local.grit"],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        native = run_tool(
+            self.root,
+            "biome",
+            "lint",
+            f"--config-path={self.root / 'biome.json'}",
+            str(self.root / "src" / "index.ts"),
+        )
+        self.assertNotEqual(native.returncode, 0, combined(native))
+        git_init_baseline(self.root)
+        (self.root / "plugins" / "local.grit").write_text(
+            "pattern changed { `bar` }\n", encoding="utf-8"
+        )
+        process = run_entry(self.root, "--quick")
+        text = combined(process)
+        self.assertEqual(process.returncode, native.returncode, text)
+        self.assertIn("Quick scope expanded to full selected scope", text)
+        self.assertIn("plugins/local.grit", text)
+        self.assertIn("Lint: 2 selected source files", text)
+        self.assertIn("Grit", text)
+
+    @requires_native_git
+    def test_quick_and_timing_flags_combine(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS})
+        git_init_baseline(self.root)
+        process = run_entry(self.root, "--quick", "--timing")
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertIn("No changed files; nothing to check.", text)
+        self.assertRegex(text, r"gajaestack timing: lint-scope files=0 status=0 elapsed_ms=\d+")
+        self.assertNotIn("gajaestack timing: lint ", text)
+        self.assertRegex(text, r"gajaestack timing: total status=0 elapsed_ms=\d+")
+
+    def test_quick_without_git_fails_without_coverage_claim(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS})
+        env = dict(os.environ, GIT_CEILING_DIRECTORIES=str(self.root.parent))
+        process = run_entry(self.root, "--quick", "--timing", env=env)
+        text = combined(process)
+        self.assertIn(process.returncode, (127, 128), text)
+        self.assertIn("no Git fallback", text)
+        self.assertNotIn("Lint:", text)
+        self.assertNotIn("No coverage", text)
+        self.assertNotIn("No changed files", text)
+        self.assertRegex(
+            process.stderr,
+            rf"gajaestack timing: lint-scope status={process.returncode} elapsed_ms=\d+",
+        )
+        self.assertNotIn("gajaestack timing: lint ", process.stderr)
+        self.assertRegex(
+            process.stderr,
+            rf"gajaestack timing: total status={process.returncode} elapsed_ms=\d+",
+        )
+
+    def test_timing_flag_reports_distinct_scope_and_check_phases(self) -> None:
+        build_consumer(self.root, sources={"index.ts": GOOD_TS, "other.ts": GOOD_TS})
+        before = tree_snapshot(self.root)
+        process = run_entry(self.root, "--timing")
+        after = tree_snapshot(self.root)
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertEqual(before, after, "timing runs must not write files")
+        self.assertIn("Typecheck:", process.stdout)
+        self.assertIn("Lint: 2 selected source files", process.stdout)
+        self.assertNotIn("gajaestack timing:", process.stdout)
+        self.assertRegex(
+            process.stderr,
+            r"gajaestack timing: typecheck-scope files=2 status=0 elapsed_ms=\d+",
+        )
+        self.assertRegex(
+            process.stderr, r"gajaestack timing: typecheck files=2 status=0 elapsed_ms=\d+"
+        )
+        self.assertRegex(
+            process.stderr, r"gajaestack timing: lint-scope files=2 status=0 elapsed_ms=\d+"
+        )
+        self.assertRegex(process.stderr, r"gajaestack timing: lint files=2 status=0 elapsed_ms=\d+")
+        self.assertRegex(process.stderr, r"gajaestack timing: total status=0 elapsed_ms=\d+")
+
+        clean_env = {
+            key: value for key, value in os.environ.items() if key != "GAJAESTACK_TIMING"
+        }
+        plain = run_entry(self.root, env=clean_env)
+        self.assertEqual(plain.returncode, 0, combined(plain))
+        self.assertNotIn("gajaestack timing:", plain.stderr)
+
+        env = dict(os.environ, GAJAESTACK_TIMING="1")
+        via_env = run_entry(self.root, env=env)
+        self.assertEqual(via_env.returncode, 0, combined(via_env))
+        self.assertRegex(via_env.stderr, r"gajaestack timing: total status=0 elapsed_ms=\d+")
+
+    def test_timing_reports_distinct_phases_on_native_failure(self) -> None:
+        build_consumer(
+            self.root,
+            sources={"index.ts": GOOD_TS, "bad.ts": TYPE_ERROR_TS, "bad-lint.ts": LINT_ERROR_TS},
+        )
+        native = direct_typecheck(self.root)
+        self.assertNotEqual(native.returncode, 0, combined(native))
+
+        process = run_entry(self.root, "--timing")
+        text = combined(process)
+        self.assertEqual(process.returncode, native.returncode, text)
+        self.assertIn("error TS", text)
+        self.assertIn("Typecheck:", process.stdout)
+        self.assertNotIn("Lint:", text)
+        self.assertRegex(
+            process.stderr, r"gajaestack timing: typecheck-scope files=3 status=0 elapsed_ms=\d+"
+        )
+        self.assertRegex(
+            process.stderr,
+            rf"gajaestack timing: typecheck files=3 status={native.returncode} elapsed_ms=\d+",
+        )
+        self.assertNotIn("gajaestack timing: lint-scope", process.stderr)
+        self.assertNotIn("gajaestack timing: lint ", process.stderr)
+        self.assertRegex(
+            process.stderr,
+            rf"gajaestack timing: total status={native.returncode} elapsed_ms=\d+",
+        )
 
 
 class TypeScriptPreloadGuardTests(NativeConsumerTestCase):
@@ -443,6 +793,52 @@ class TypeScriptPreloadGuardTests(NativeConsumerTestCase):
         self.assertIn("gajaestack:", text)
         self.assertFalse((self.root / "sentinel.txt").exists(), text)
 
+    def test_guard_timing_env_reports_phases_and_keeps_sentinel(self) -> None:
+        build_consumer(self.root, bunfig=True, sentinel=True)
+        env = dict(os.environ, GAJAESTACK_TIMING="1")
+        process = run_guard(self.root, env=env)
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertTrue((self.root / "sentinel.txt").exists(), text)
+        self.assertRegex(text, r"\b1 pass\b")
+        self.assertRegex(
+            text, r"gajaestack timing: typecheck-scope files=\d+ status=0 elapsed_ms=\d+"
+        )
+        self.assertRegex(
+            text, r"gajaestack timing: typecheck files=\d+ status=0 elapsed_ms=\d+"
+        )
+        self.assertRegex(
+            text, r"gajaestack timing: lint-scope files=\d+ status=0 elapsed_ms=\d+"
+        )
+        self.assertRegex(text, r"gajaestack timing: lint files=\d+ status=0 elapsed_ms=\d+")
+        self.assertRegex(text, r"gajaestack timing: total status=0 elapsed_ms=\d+")
+
+    def test_guard_timing_env_lint_failure_blocks_sentinel(self) -> None:
+        build_consumer(
+            self.root,
+            sources={"index.ts": GOOD_TS, "bad-lint.ts": LINT_ERROR_TS},
+            bunfig=True,
+            sentinel=True,
+        )
+        native = direct_lint(self.root)
+        self.assertNotEqual(native.returncode, 0, combined(native))
+
+        env = dict(os.environ, GAJAESTACK_TIMING="1")
+        process = run_guard(self.root, env=env)
+        text = combined(process)
+        self.assertEqual(process.returncode, native.returncode, text)
+        self.assertFalse((self.root / "sentinel.txt").exists(), text)
+        self.assertNotIn("sentinel ran", text)
+        self.assertIn("bad-lint", text)
+        self.assertRegex(text, r"gajaestack timing: lint-scope files=2 status=0 elapsed_ms=\d+")
+        self.assertRegex(
+            text,
+            rf"gajaestack timing: lint files=2 status={native.returncode} elapsed_ms=\d+",
+        )
+        self.assertRegex(
+            text, rf"gajaestack timing: total status={native.returncode} elapsed_ms=\d+"
+        )
+
 
 class TypeScriptAssetContractTests(unittest.TestCase):
     def test_assets_declare_no_python_runtime_dependency(self) -> None:
@@ -455,6 +851,13 @@ class TypeScriptAssetContractTests(unittest.TestCase):
         self.assertIn(ENTRY_PATH, text)
         self.assertIn("usage:", text)
         self.assertIn("[--quick]", text)
+        self.assertIn("[--timing]", text)
+
+    def test_entry_declares_timing_and_git_lock_contracts(self) -> None:
+        text = (ASSET_SOURCE / "check.ts").read_text(encoding="utf-8")
+        self.assertIn("GAJAESTACK_TIMING", text)
+        self.assertIn("--no-optional-locks", text)
+        self.assertIn("fatal: true", text)
 
 
 if __name__ == "__main__":

@@ -16,6 +16,8 @@ python3 /path/to/gajaestack/scripts/gajaestack.py adopt ruff guard --root /path/
 
 Selections never expand dependencies implicitly, and bindings require reviewed facts that already exist; facts templates are explicit and absent-only (`--facts-template python|typescript`). The [selectable native checks guide](docs/python-trial.md) is the authoritative walkthrough of the five-step journey, native wiring, removal, and bypass limits. Dependency installs and CI changes remain explicitly approved steps.
 
+Preview and the managed `AGENTS.md` addendum name the one completion command your facts already declare (`test_command`) with their declared binding and required checks — copied bytes are not activation, no runner or cache is invented, and no wiring is proven. `--timing` / `GAJAESTACK_TIMING=1` reports phase timing (elapsed, counts, exit) on stderr for the Python and TypeScript check helpers, and TypeScript `--quick` is a changed-file lint intersection that expands to the full declared lint scope on facts/Biome configuration/checker changes; no coverage means no coverage. The [selectable native checks guide](docs/python-trial.md) holds these contracts.
+
 ## Skills
 
 Select each skill independently; none requires another:
