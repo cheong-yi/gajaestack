@@ -11,6 +11,34 @@ function table(value: unknown, label: string): Record<string, unknown> {
 	return value as Record<string, unknown>;
 }
 
+const COMPLETION_TIMEOUT_KEY = "completion_timeout_seconds";
+const MAX_COMPLETION_TIMEOUT_SECONDS = 9007199254740991;
+
+function completionTimeoutMisplaced(node: unknown, factTable: object): boolean {
+	// The exact key is supported only as a direct key of the parsed [fact] table.
+	// Traversing the parsed document (tables and arrays) rejects the same key at
+	// the root and in other, nested, or array-embedded tables; dotted keys and
+	// table headers are indistinguishable after parsing, which is intentional.
+	if (Array.isArray(node)) return node.some((item) => completionTimeoutMisplaced(item, factTable));
+	if (!node || typeof node !== "object") return false;
+	return Object.entries(node).some(([key, child]) =>
+		key === COMPLETION_TIMEOUT_KEY ? node !== factTable : completionTimeoutMisplaced(child, factTable),
+	);
+}
+
+function completionBudget(fact: Record<string, unknown>): void {
+	// Optional outer budget for the declared fact.test_command completion scope
+	// only; absent means unconfigured (no default, no ratchet). This validates the
+	// fact alone: timeout execution and enforcement stay outside this checker.
+	if (!(COMPLETION_TIMEOUT_KEY in fact)) return;
+	const budget = fact[COMPLETION_TIMEOUT_KEY];
+	if (typeof budget !== "number" || !Number.isSafeInteger(budget) || budget < 1 || budget > MAX_COMPLETION_TIMEOUT_SECONDS) {
+		fail(`fact.${COMPLETION_TIMEOUT_KEY} must be an integer from 1 to ${MAX_COMPLETION_TIMEOUT_SECONDS}`);
+	}
+	const testCommand = fact.test_command;
+	if (typeof testCommand !== "string" || !testCommand.trim()) fail(`fact.${COMPLETION_TIMEOUT_KEY} requires a nonblank fact.test_command`);
+}
+
 function localPath(value: unknown, label: string): string {
 	if (typeof value !== "string" || !value.trim() || isAbsolute(value)) fail(`${label} must be a repository-relative path`);
 	const path = resolve(root, value as string);
@@ -197,6 +225,8 @@ async function runChecks(quick: boolean, binding: boolean, timing: boolean): Pro
 		const selected = fact?.selected_components;
 		if (fact?.schema_version !== 1 || !Array.isArray(selected) || !selected.includes("typescript")) fail("fact schema_version=1 and selected component typescript are required");
 		if (binding && !selected.includes("typescript-guard")) fail("Bun preload requires explicit typescript-guard selection");
+		if (completionTimeoutMisplaced(document, fact)) fail(`fact.${COMPLETION_TIMEOUT_KEY} is supported only as a direct [fact] key`);
+		completionBudget(fact);
 		const options = table(document.typescript, "typescript");
 		if (!options || options.schema_version !== 1 || typeof options.typecheck !== "boolean" || typeof options.lint !== "boolean") fail("[typescript] requires schema_version=1 and explicit typecheck/lint booleans");
 		if (binding && !options.typecheck && !options.lint) fail("required Bun preload has no selected checks");

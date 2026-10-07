@@ -21,7 +21,9 @@ infers a language, overwrites or merges existing facts, and never satisfies
 the prior-reviewed-facts check that binding adoption requires.
 Preview reports each change's content, source, and destination and names the
 one completion command consumer facts already declare (``[fact].test_command``)
-with their declared binding and required checks; ``--apply`` replans against
+with their declared binding, required checks, and the declared outer completion
+budget (``[fact].completion_timeout_seconds``) or its explicit unconfigured
+state; ``--apply`` replans against
 current state. The managed ``AGENTS.md`` addendum span is rendered from those
 same facts, so copied guidance carries the same command without inventing one
 or claiming wiring. Unrelated bytes are preserved throughout.
@@ -104,6 +106,9 @@ external_commands = "Changed subprocess or executable invocation: test arguments
 schema_version = 1
 selected_components = ["routing", "typescript"]
 test_command = "bun test"
+# Optional fact.completion_timeout_seconds: project-owned outer seconds for
+# test_command (integer 1..9007199254740991). Omitted means unconfigured.
+# The calling launcher must honour it; this kit does not impose a timeout.
 affected_test_command = "bun .gajaestack/typescript/check.ts --quick"
 ci_jobs_added = false
 pcd_is_enforcement = false
@@ -420,6 +425,15 @@ def _routing_fact_errors(path: Path) -> list[str]:
     return routing_policy_file_errors(path)
 
 
+def _completion_budget_errors(policy: dict) -> list[str]:
+    if __package__:
+        from scripts.check_repo import completion_budget_errors
+    else:
+        from check_repo import completion_budget_errors
+
+    return completion_budget_errors(policy)
+
+
 @dataclass(frozen=True)
 class _Addendum:
     marked: bool
@@ -494,6 +508,32 @@ def _verified_span(addendum: _Addendum, path: Path) -> _Addendum:
     return addendum
 
 
+COMPLETION_TIMEOUT_FIELD = "completion_timeout_seconds"
+
+
+def _completion_budget(policy: dict) -> str:
+    """Validate through the shared check_repo budget facts, then report state.
+
+    Value bounds, unsupported placement, and the nonblank test_command scope
+    are checked by the shared ``completion_budget_errors`` contract, so the
+    adopter keeps no second validator and rejects invalid facts wherever it
+    reads them, before any adoption write. Returns configured
+    ``"<n> seconds"`` or explicit ``"unconfigured"``: an absent key means
+    unconfigured, the kit supplies no default, executes no budget, and imposes
+    no timeout on the declared [fact].test_command completion scope.
+    """
+    errors = _completion_budget_errors(policy)
+    if errors:
+        raise AdoptionError(
+            "invalid consumer facts completion budget: " + "; ".join(errors)
+        )
+    fact = policy.get("fact") if isinstance(policy.get("fact"), dict) else {}
+    seconds = fact.get(COMPLETION_TIMEOUT_FIELD)
+    if seconds is None:
+        return "unconfigured"
+    return f"{seconds} seconds"
+
+
 def _declared_binding_and_checks(policy: dict) -> tuple[str, str]:
     """Return the facts-declared binding names and required checks."""
     fact = policy.get("fact") if isinstance(policy.get("fact"), dict) else {}
@@ -514,6 +554,7 @@ def _declared_binding_and_checks(policy: dict) -> tuple[str, str]:
 
 def _completion_fragments(policy: dict) -> dict[str, str]:
     """Facts-derived substitutions for the reusable managed-addendum asset."""
+    budget = _completion_budget(policy)
     fact = policy.get("fact") if isinstance(policy.get("fact"), dict) else {}
     command = fact.get("test_command")
     if not isinstance(command, str) or not command.strip():
@@ -526,6 +567,7 @@ def _completion_fragments(policy: dict) -> dict[str, str]:
         "{{test_command}}": command.strip(),
         "{{declared_binding}}": binding,
         "{{declared_checks}}": checks,
+        "{{completion_budget}}": budget,
     }
 
 
@@ -628,6 +670,21 @@ def prepare(
                 "facts are never overwritten or merged)"
             )
         template_content = _facts_template_content(facts_template)
+    # Preview and apply share the same budget admission, even for selections
+    # without a native binding or managed guidance. Never discover a bad budget
+    # only while printing guidance after the mutation plan has been accepted.
+    facts_content = template_content
+    existing_facts = root / FACTS_DESTINATION
+    if facts_content is None and (existing_facts.exists() or existing_facts.is_symlink()):
+        _check_destination(root, existing_facts)
+        _require_file_destination(existing_facts)
+        facts_content = _read_destination(existing_facts)
+    if facts_content is not None:
+        try:
+            policy = tomllib.loads(facts_content.decode("utf-8"))
+        except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+            raise AdoptionError(f"cannot read consumer facts completion budget: {error}") from error
+        _completion_budget(policy)
     # Bindings validate the facts that exist NOW: template creation planned in
     # this run can never satisfy the prior-reviewed-facts binding check.
     _check_bindings(root, components, remove=remove)
@@ -820,7 +877,8 @@ def _check_bindings(root: Path, components: list[str], *, remove: bool) -> None:
     prerequisites = {name for names in DEPENDENCIES.values() for name in names}
     if remove and requested.intersection(prerequisites) and facts_path.is_file():
         try:
-            facts = tomllib.loads(facts_path.read_text(encoding="utf-8")).get("fact", {})
+            policy = tomllib.loads(facts_path.read_text(encoding="utf-8"))
+            facts = policy.get("fact", {})
             raw = facts.get("selected_components", []) if isinstance(facts, dict) else []
             if isinstance(raw, list) and all(isinstance(item, str) for item in raw):
                 declared = set(raw)
@@ -928,29 +986,179 @@ def _print_preview(changes: list[Change]) -> None:
         print("  ----- content end -----")
 
 
+BUNFIG_FILENAME = "bunfig.toml"
+TYPESCRIPT_PRELOAD_DESTINATION = ".gajaestack/typescript/preload.ts"
+# Standalone completion checks documented for a selected component that no
+# facts-declared binding covers: guidance names them for explicit review;
+# adoption never runs them and never edits native configuration to activate.
+STANDALONE_CHECKS: tuple[tuple[str, str, str], ...] = (
+    (
+        "ruff",
+        "required-ruff",
+        "python .gajaestack/scripts/check_changed_python.py --full",
+    ),
+    ("typescript", "typescript-guard", "bun .gajaestack/typescript/check.ts"),
+)
+
+
+def _selected_components(policy: dict) -> list[str]:
+    fact = policy.get("fact") if isinstance(policy.get("fact"), dict) else {}
+    selected = fact.get("selected_components")
+    if not isinstance(selected, list):
+        return []
+    return [item for item in selected if isinstance(item, str)]
+
+
+def _standalone_selected_checks(policy: dict) -> list[str]:
+    """Selected checks no facts-declared binding covers; run them explicitly."""
+    selected = set(_selected_components(policy))
+    return [
+        command
+        for component, binding, command in STANDALONE_CHECKS
+        if component in selected and binding not in selected
+    ]
+
+
+def _typescript_binding_status(root: Path, policy: dict) -> list[str]:
+    """Read-only ``bunfig.toml`` status for a selected TypeScript binding.
+
+    Configuration facts only, never runtime proof: an unselected guard is
+    manual-only, a missing preload entry is not configured with a manual merge
+    remedy, a found entry is configured but not demonstrated, and an
+    unreadable or malformed file leaves configuration unverified. Native
+    configuration is never written, edited, or repaired here.
+    """
+    selected = set(_selected_components(policy))
+    if "typescript-guard" not in selected:
+        if "typescript" not in selected:
+            return []
+        return [
+            "typescript binding status: typescript-guard absent from "
+            f"fact.selected_components — {BUNFIG_FILENAME} preload wiring is "
+            "manual-only: no diagnostic, no automatic binding; explicitly review "
+            "facts and native wiring if it is wanted"
+        ]
+    unverified_prefix = (
+        f"typescript binding status: unverified — {BUNFIG_FILENAME} cannot be read"
+    )
+    unverified_suffix = (
+        "; review or repair it yourself as a reviewed consumer change; this kit "
+        "never edits native configuration"
+    )
+    remedy = (
+        "merge it into the existing [test].preload list yourself as a reviewed "
+        "consumer change, preserving existing preloads and their order; this kit "
+        "never edits native configuration"
+    )
+    bunfig = root / BUNFIG_FILENAME
+    try:
+        is_file = bunfig.is_file()
+        content = bunfig.read_bytes() if is_file else None
+    except OSError as error:
+        return [f"{unverified_prefix} ({error}){unverified_suffix}"]
+    if content is None:
+        if bunfig.exists():
+            return [
+                f"{unverified_prefix} (not a regular file){unverified_suffix}"
+            ]
+        return [
+            f"typescript binding status: selected but not configured — "
+            f"{BUNFIG_FILENAME} is absent; create it yourself as a reviewed "
+            f'consumer change with preload = ["./{TYPESCRIPT_PRELOAD_DESTINATION}"] '
+            "under [test]; this kit never edits native configuration"
+        ]
+    try:
+        document = tomllib.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        return [f"{unverified_prefix} (malformed: {error}){unverified_suffix}"]
+    test = document.get("test") if isinstance(document.get("test"), dict) else {}
+    preload = test.get("preload")
+    entries = (
+        [preload]
+        if isinstance(preload, str)
+        else preload
+        if isinstance(preload, list)
+        else []
+    )
+    if not any(
+        isinstance(entry, str)
+        and entry.removeprefix("./") == TYPESCRIPT_PRELOAD_DESTINATION
+        for entry in entries
+    ):
+        return [
+            f"typescript binding status: selected but not configured — no "
+            f"{TYPESCRIPT_PRELOAD_DESTINATION} entry in {BUNFIG_FILENAME} "
+            f"[test].preload; {remedy}"
+        ]
+    return [
+        f"typescript binding status: configured — {BUNFIG_FILENAME} [test].preload "
+        f"lists {TYPESCRIPT_PRELOAD_DESTINATION}; configured, not demonstrated: "
+        "file presence proves no runtime behavior; run the declared test command "
+        "plus a seeded rejection to demonstrate"
+    ]
+
+
+def _print_review_instructions() -> None:
+    """Separate explicit-review steps; adoption performs no automatic repair."""
+    print(
+        "  review explicitly: consumer facts "
+        f"({FACTS_DESTINATION.as_posix()}) against your selection — facts stay "
+        "consumer-owned and are never rewritten"
+    )
+    print(
+        "  review explicitly: native wiring (pytest options/plugins, "
+        f"{BUNFIG_FILENAME} preloads) as a separately approved consumer change — "
+        "adoption copies bytes, never edits native configuration, and performs no "
+        "automatic repair"
+    )
+
+
 def _print_completion_guidance(root: Path) -> None:
-    """Name the one completion command plus the facts-declared checks and binding."""
-    print("Completion guidance (consumer facts only; copied bytes prove no wiring):")
+    """Name completion command, budget, checks, binding, and binding gap."""
+    print(
+        "Completion guidance (consumer facts plus read-only native-configuration "
+        "status; copied bytes prove no wiring):"
+    )
     facts_path = root / FACTS_DESTINATION
     if not facts_path.is_file():
         print(
             f"  consumer facts absent at {FACTS_DESTINATION.as_posix()}; no completion "
             "command is declared, named, or invented here"
         )
+        _print_review_instructions()
         return
     try:
         policy = tomllib.loads(_read_destination(facts_path).decode("utf-8"))
     except (AdoptionError, UnicodeDecodeError, tomllib.TOMLDecodeError):
         print("  consumer facts unreadable; no completion command is named")
+        _print_review_instructions()
         return
+    budget = _completion_budget(policy)
     fact = policy.get("fact") if isinstance(policy.get("fact"), dict) else {}
     command = fact.get("test_command")
     if not isinstance(command, str) or not command.strip():
         print("  facts declare no [fact].test_command; no completion command is named")
+        _print_review_instructions()
         return
     print(
         f"  one completion command: {command.strip()} "
         f"([fact].test_command in {FACTS_DESTINATION.as_posix()})"
+    )
+    if budget == "unconfigured":
+        print(
+            f"  outer completion budget: unconfigured ([fact].{COMPLETION_TIMEOUT_FIELD} "
+            "is absent; report the launcher's actual limit instead of claiming an "
+            "unlimited execution budget)"
+        )
+    else:
+        print(
+            f"  outer completion budget: {budget} ([fact].{COMPLETION_TIMEOUT_FIELD} in "
+            f"{FACTS_DESTINATION.as_posix()}; declared [fact].test_command scope only)"
+        )
+    print(
+        "  calling launcher must honour the declared budget and preserve logs; "
+        "outer timeout means incomplete verification, not a native check failure "
+        "(this kit does not change launcher or native deadlines)"
     )
     binding, checks = _declared_binding_and_checks(policy)
     if binding == "none":
@@ -964,6 +1172,15 @@ def _print_completion_guidance(root: Path) -> None:
             f"{binding}; bound checks are covered only when activated in reviewed "
             "native configuration)"
         )
+    for check in _standalone_selected_checks(policy):
+        print(
+            f"  standalone selected check (no declared binding covers it; run it "
+            f"explicitly once adopted): {check} — adoption copies assets and "
+            "runs nothing"
+        )
+    for status in _typescript_binding_status(root, policy):
+        print(f"  {status}")
+    _print_review_instructions()
 
 
 def _print_component_list() -> None:

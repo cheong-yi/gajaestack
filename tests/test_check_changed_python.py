@@ -502,6 +502,73 @@ class CheckChangedPythonTests(unittest.TestCase):
             )
             self.assertEqual(stderr.count("timing:"), 2)
 
+    def test_completion_budget_does_not_change_native_ruff_status(self) -> None:
+        for budget in (None, "1", "600", "9007199254740991"):
+            with self.subTest(budget=budget), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                fact = '[fact]\ntest_command = "python -B -m pytest"\n'
+                if budget is not None:
+                    fact += f"completion_timeout_seconds = {budget}\n"
+                self.write_files(root, {
+                    "base.py": "base = 1\n",
+                    "ruff.toml": "\n",
+                    ".gajaestack/routing.toml": fact + (
+                        "[python]\nschema_version = 1\n"
+                        'ruff_paths = ["base.py"]\nruff_config = "ruff.toml"\n'
+                    ),
+                })
+
+                def native_failure(command, **kwargs):
+                    self.assertNotIn("timeout", kwargs)
+                    return subprocess.CompletedProcess(command, 37)
+
+                with self.fake_ruff(native_failure) as commands, in_directory(root):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        result = main(["--full"])
+                self.assertEqual(result, 37)
+                self.assertEqual(len(commands), 1)
+                self.assertEqual(commands[0][-1], "base.py")
+
+    def test_invalid_completion_budget_stops_before_ruff(self) -> None:
+        for budget in (
+            "true", "false", "0", "-1", '"600"', "1.5", "1.0",
+            "inf", "nan", "9007199254740992", "18446744073709551616",
+        ):
+            with self.subTest(budget=budget), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.write_files(root, {
+                    ".gajaestack/routing.toml": (
+                        '[fact]\ntest_command = "python -B -m pytest"\n'
+                        f"completion_timeout_seconds = {budget}\n"
+                        "[python]\nschema_version = 1\n"
+                        'ruff_paths = ["missing.py"]\nruff_config = "missing.toml"\n'
+                    ),
+                })
+                error = io.StringIO()
+                with self.fake_ruff() as commands, in_directory(root):
+                    with contextlib.redirect_stderr(error):
+                        result = main(["--full"])
+                self.assertEqual(result, 2)
+                self.assertIn("completion_timeout_seconds", error.getvalue())
+                self.assertEqual(commands, [])
+
+    def test_completion_budget_requires_command_and_direct_fact_placement(self) -> None:
+        for facts in (
+            "completion_timeout_seconds = 60\n",
+            "[python]\ncompletion_timeout_seconds = 60\n",
+            "[typescript]\ncompletion_timeout_seconds = 60\n",
+            "[fact.nested]\ncompletion_timeout_seconds = 60\n",
+            "[[custom]]\ncompletion_timeout_seconds = 60\n",
+            "[[fact]]\ncompletion_timeout_seconds = 60\n",
+            "[fact]\ncompletion_timeout_seconds = 60\n",
+            '[fact]\ntest_command = " "\ncompletion_timeout_seconds = 60\n',
+        ):
+            with self.subTest(facts=facts), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.write_files(root, {".gajaestack/routing.toml": facts})
+                with self.assertRaisesRegex(ScopeError, "completion_timeout_seconds"):
+                    full_scope(root, root / ".gajaestack/routing.toml")
+
     def test_timing_env_times_direct_scope_and_ruff_calls(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -36,6 +36,9 @@ empty scope, a missing/escaping target, a missing config file, missing
 facts, or a working directory that differs from a declared ``root`` reject
 with exit status 2. If ``--config`` is given explicitly it overrides
 ``[python].ruff_config`` in full mode.
+Wherever facts are read, an invalid optional ``completion_timeout_seconds``
+fact (a bad value or placement outside ``[fact]``) rejects with exit status 2;
+quick mode that reads no facts gains no new facts dependency.
 
 Timing is opt-in with ``--timing`` or ``GAJAESTACK_TIMING=1`` (the
 environment variable also times direct bound calls to ``full_scope`` and
@@ -70,6 +73,8 @@ DEFAULT_CONFIG = ".gajaestack/python-trial/ruff.toml"
 DEFAULT_FACTS = ".gajaestack/routing.toml"
 MISSING_EXECUTABLE = 127
 INVALID_SCOPE = 2
+COMPLETION_TIMEOUT_FIELD = "completion_timeout_seconds"
+COMPLETION_TIMEOUT_MAX = 9007199254740991
 
 
 class GitError(RuntimeError):
@@ -165,17 +170,58 @@ def ruff_check(
     return status
 
 
+def _misplaced_completion_budget(
+    node: object, path: tuple[str, ...]
+) -> list[tuple[str, ...]]:
+    places: list[tuple[str, ...]] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == COMPLETION_TIMEOUT_FIELD and path != ("fact",):
+                places.append((*path, key))
+            places.extend(_misplaced_completion_budget(value, (*path, key)))
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            places.extend(_misplaced_completion_budget(item, (*path, str(index))))
+    return places
+
+
+def _validate_completion_budget(data: dict, facts_path: Path) -> None:
+    """Reject an unusable outer completion budget wherever facts are read."""
+    for place in _misplaced_completion_budget(data, ()):
+        found = ".".join(place)
+        raise ScopeError(
+            f"{facts_path}: {COMPLETION_TIMEOUT_FIELD} is supported only as a "
+            f"direct [fact] key (found at {found})"
+        )
+    fact = data.get("fact")
+    if isinstance(fact, dict) and COMPLETION_TIMEOUT_FIELD in fact:
+        value = fact[COMPLETION_TIMEOUT_FIELD]
+        if type(value) is not int or not 1 <= value <= COMPLETION_TIMEOUT_MAX:
+            raise ScopeError(
+                f"{facts_path}: fact.{COMPLETION_TIMEOUT_FIELD} must be an "
+                f"integer from 1 to {COMPLETION_TIMEOUT_MAX} when present"
+            )
+        test_command = fact.get("test_command")
+        if not isinstance(test_command, str) or not test_command.strip():
+            raise ScopeError(
+                f"{facts_path}: fact.{COMPLETION_TIMEOUT_FIELD} requires a "
+                "nonblank fact.test_command"
+            )
+
+
 def read_facts(facts_path: Path) -> dict:
     """Parse the consumer facts TOML file, rejecting unusable input."""
     try:
         with facts_path.open("rb") as handle:
-            return tomllib.load(handle)
+            data = tomllib.load(handle)
     except FileNotFoundError:
         raise ScopeError(f"facts file not found: {facts_path}") from None
     except tomllib.TOMLDecodeError as error:
         raise ScopeError(f"malformed facts file {facts_path}: {error}") from error
     except OSError as error:
         raise ScopeError(f"cannot read facts file {facts_path}: {error}") from error
+    _validate_completion_budget(data, facts_path)
+    return data
 
 
 def full_scope(

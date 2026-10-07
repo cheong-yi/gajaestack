@@ -10,7 +10,8 @@ when_to_run: During design and implementation of a change whose correctness depe
 
 Apply this guidance to the change at hand; do not add types for their own sake.
 
-- Choose the smallest useful representation that communicates the domain and supports the behavior. Prefer established patterns already used in this repository.
+- Choose the smallest useful representation that communicates the domain and supports the behavior. Prefer established patterns already used in this repository. Subtract before abstracting: remove the redundant representation or misplaced responsibility first; add a shared type, generic, or helper only when concrete callers demonstrate the same recurring need.
+- Reuse the canonical representation already accepted at a boundary instead of introducing a parallel one.
 - Model mutually exclusive states as discriminated unions rather than independent flags when combinations would permit invalid states.
 - Give values semantic, distinct ID types only when confusing them is a meaningful risk. Avoid branding every primitive.
 - Parse and validate untrusted data at boundaries, then use the validated representation internally. Derive types from authoritative schemas where available; do not create a competing schema.
@@ -34,4 +35,4 @@ type Job =
   | { state: "complete"; result: string };
 ```
 
-Adapt names and variant details to the real domain and existing project conventions. This is guidance, not executable enforcement; validate the change with the repository's normal checks.
+Adapt names and variant details to the real domain and existing project conventions. This is guidance, not executable enforcement; validate the change with the repository's normal checks, exercising the failure cases the boundary contract promises to reject before side effects.

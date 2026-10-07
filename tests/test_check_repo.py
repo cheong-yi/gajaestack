@@ -6,7 +6,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.check_repo import check, main, routing_policy_errors, routing_policy_file_errors
+from scripts.check_repo import (
+    check,
+    completion_budget_errors,
+    main,
+    routing_policy_errors,
+    routing_policy_file_errors,
+)
 
 
 CORE_FACTS = (
@@ -376,6 +382,151 @@ class CheckRepoTests(unittest.TestCase):
             errors = check(root)
             self.assertTrue(
                 any("action-required" in e and "schema_version" in e for e in errors)
+            )
+
+    def test_completion_timeout_budget_is_optional_and_in_range(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            policy_path = root / "python/routing.toml"
+            original = policy_path.read_text(encoding="utf-8")
+            self.assertEqual(check(root), [])
+            for seconds in ("1", "600", "9007199254740991"):
+                with self.subTest(seconds=seconds):
+                    policy_path.write_text(
+                        original.replace(
+                            'test_command = "python -m pytest"\n',
+                            'test_command = "python -m pytest"\n'
+                            f"completion_timeout_seconds = {seconds}\n",
+                            1,
+                        ),
+                        encoding="utf-8",
+                    )
+                    self.assertEqual(check(root), [])
+            policy_path.write_text(original, encoding="utf-8")
+
+    def test_rejects_invalid_completion_timeout_budget_values(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            policy_path = root / "python/routing.toml"
+            original = policy_path.read_text(encoding="utf-8")
+            for value in (
+                "true",
+                "false",
+                "0",
+                "-1",
+                '"600"',
+                "1.5",
+                "nan",
+                "inf",
+                "9007199254740992",
+                "18446744073709551616",
+            ):
+                with self.subTest(value=value):
+                    policy_path.write_text(
+                        original.replace(
+                            'test_command = "python -m pytest"\n',
+                            'test_command = "python -m pytest"\n'
+                            f"completion_timeout_seconds = {value}\n",
+                            1,
+                        ),
+                        encoding="utf-8",
+                    )
+                    errors = check(root)
+                    self.assertTrue(
+                        any(
+                            "fact.completion_timeout_seconds must be an integer" in error
+                            for error in errors
+                        ),
+                        errors,
+                    )
+            policy_path.write_text(original, encoding="utf-8")
+
+    def test_completion_timeout_budget_requires_test_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            policy_path = root / "python/routing.toml"
+            policy_path.write_text(
+                policy_path.read_text(encoding="utf-8").replace(
+                    'test_command = "python -m pytest"\n',
+                    "completion_timeout_seconds = 600\n",
+                    1,
+                ),
+                encoding="utf-8",
+            )
+            errors = check(root)
+            self.assertTrue(
+                any(
+                    "fact.completion_timeout_seconds requires a nonblank fact.test_command"
+                    in error
+                    for error in errors
+                ),
+                errors,
+            )
+
+    def test_rejects_completion_timeout_budget_outside_fact(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            policy_path = root / "python/routing.toml"
+            original = policy_path.read_text(encoding="utf-8")
+            cases = {
+                "root": original.replace(
+                    "[conditional]\n",
+                    "completion_timeout_seconds = 600\n\n[conditional]\n",
+                    1,
+                ),
+                "python": original + "completion_timeout_seconds = 600\n",
+                "typescript": (
+                    original
+                    + "\n[typescript]\nschema_version = 1\ntypecheck = true\n"
+                    'lint = false\ntsconfig = "tsconfig.json"\n'
+                    "completion_timeout_seconds = 600\n"
+                ),
+                "nested": original
+                + "\n[fact.extra]\ncompletion_timeout_seconds = 600\n",
+            }
+            for name, text in cases.items():
+                with self.subTest(name=name):
+                    policy_path.write_text(text, encoding="utf-8")
+                    errors = check(root)
+                    self.assertTrue(
+                        any("only as a direct [fact] key" in error for error in errors),
+                        errors,
+                    )
+            policy_path.write_text(original, encoding="utf-8")
+
+    def test_completion_budget_errors_is_pure_and_boundary_prefixes(self) -> None:
+        misplaced = completion_budget_errors(
+            {"fact": [{"completion_timeout_seconds": 600, "test_command": "run"}]}
+        )
+        self.assertTrue(any("only as a direct [fact] key" in error for error in misplaced))
+        errors = completion_budget_errors(
+            {"fact": {"completion_timeout_seconds": 0, "test_command": " "}}
+        )
+        self.assertEqual(len(errors), 2)
+        for error in errors:
+            self.assertIn("completion_timeout_seconds", error)
+            self.assertNotIn("/", error)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            policy_path = root / "python/routing.toml"
+            policy_path.write_text(
+                policy_path.read_text(encoding="utf-8")
+                + "completion_timeout_seconds = 600\n",
+                encoding="utf-8",
+            )
+            direct = routing_policy_file_errors(policy_path)
+            self.assertTrue(
+                any(
+                    error.startswith(str(policy_path))
+                    and "only as a direct [fact] key" in error
+                    for error in direct
+                ),
+                direct,
             )
 
 

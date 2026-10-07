@@ -60,6 +60,7 @@ def routing_text(
     lint: bool = True,
     paths: list[str] | None = None,
     biome_config: str = "biome.json",
+    fact_lines: str = "",
 ) -> str:
     selected = ["typescript", "typescript-guard"] if selected is None else selected
     required = ["ts-typecheck", "ts-lint"] if required is None else required
@@ -70,6 +71,7 @@ def routing_text(
         "[fact]\n"
         "schema_version = 1\n"
         f"selected_components = {toml_list(selected)}\n"
+        f"{fact_lines}"
         "\n"
         "[typescript]\n"
         "schema_version = 1\n"
@@ -336,6 +338,102 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
         malformed = run_entry(self.root)
         self.assertEqual(malformed.returncode, 2, combined(malformed))
         self.assertIn("gajaestack:", combined(malformed))
+
+    def test_completion_budget_valid_when_configured_or_absent(self) -> None:
+        fact = 'test_command = "bun test"\n'
+        cases = [
+            ("absent-unconfigured", ""),
+            ("configured", fact + "completion_timeout_seconds = 30\n"),
+            ("minimum", fact + "completion_timeout_seconds = 1\n"),
+            ("maximum", fact + "completion_timeout_seconds = 9007199254740991\n"),
+            # Bun.TOML parses 1.0 to the same number as 1; parsed-value validation
+            # cannot distinguish integer notation, a disclosed parser boundary.
+            ("integer-valued-float-notation", fact + "completion_timeout_seconds = 1.0\n"),
+        ]
+        for case, fact_lines in cases:
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    build_consumer(root, routing=routing_text(fact_lines=fact_lines))
+                    process = run_entry(root)
+                    text = combined(process)
+                    self.assertEqual(process.returncode, 0, text)
+                    self.assertIn("Typecheck:", text)
+                    self.assertIn("Lint:", text)
+
+    def test_completion_budget_invalid_values_rejected_before_tools(self) -> None:
+        fact = 'test_command = "bun test"\n'
+        integer_error = "must be an integer from 1 to 9007199254740991"
+        cases = [
+            ("boolean", fact + "completion_timeout_seconds = true\n", integer_error),
+            ("zero", fact + "completion_timeout_seconds = 0\n", integer_error),
+            ("negative", fact + "completion_timeout_seconds = -1\n", integer_error),
+            ("string", fact + 'completion_timeout_seconds = "30"\n', integer_error),
+            ("fraction", fact + "completion_timeout_seconds = 1.5\n", integer_error),
+            ("nonfinite", fact + "completion_timeout_seconds = inf\n", integer_error),
+            ("overflow-float", fact + "completion_timeout_seconds = 1e300\n", integer_error),
+            (
+                "integer-beyond-safe-range",
+                fact + "completion_timeout_seconds = 9007199254740992\n",
+                "losslessly represented",
+            ),
+        ]
+        for case, fact_lines, expected in cases:
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    # No tool symlinks are installed, so any tool resolution before
+                    # this validation would surface as 127 missing executable.
+                    build_consumer(root, routing=routing_text(fact_lines=fact_lines), tools=())
+                    process = run_entry(root)
+                    text = combined(process)
+                    self.assertEqual(process.returncode, 2, text)
+                    self.assertIn(expected, text)
+                    self.assertNotIn("missing executable:", text)
+                    self.assertNotIn("Typecheck:", text)
+                    self.assertNotIn("Lint:", text)
+
+    def test_completion_budget_requires_nonblank_test_command(self) -> None:
+        cases = [
+            ("absent", "completion_timeout_seconds = 30\n"),
+            ("empty", 'test_command = ""\ncompletion_timeout_seconds = 30\n'),
+            ("whitespace", 'test_command = "   "\ncompletion_timeout_seconds = 30\n'),
+            ("nonstring", "test_command = 7\ncompletion_timeout_seconds = 30\n"),
+        ]
+        for case, fact_lines in cases:
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    build_consumer(root, routing=routing_text(fact_lines=fact_lines), tools=())
+                    process = run_entry(root)
+                    text = combined(process)
+                    self.assertEqual(process.returncode, 2, text)
+                    self.assertIn("requires a nonblank fact.test_command", text)
+                    self.assertNotIn("missing executable:", text)
+                    self.assertNotIn("Typecheck:", text)
+                    self.assertNotIn("Lint:", text)
+
+    def test_completion_budget_key_outside_fact_rejected(self) -> None:
+        key = "completion_timeout_seconds = 30\n"
+        cases = [
+            ("root", key + routing_text()),
+            ("python", routing_text() + "[python]\nimports = []\n" + key),
+            ("typescript", routing_text() + key),
+            ("nested", routing_text() + "[nested]\n" + key),
+            ("fact-nested", routing_text() + "[fact.extra]\n" + key),
+        ]
+        for case, routing in cases:
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    build_consumer(root, routing=routing, tools=())
+                    process = run_entry(root)
+                    text = combined(process)
+                    self.assertEqual(process.returncode, 2, text)
+                    self.assertIn("supported only as a direct [fact] key", text)
+                    self.assertNotIn("missing executable:", text)
+                    self.assertNotIn("Typecheck:", text)
+                    self.assertNotIn("Lint:", text)
 
     def test_missing_local_executable_reports_127(self) -> None:
         for missing_tool in ("biome", "tsc"):
@@ -740,7 +838,12 @@ class TypeScriptPreloadGuardTests(NativeConsumerTestCase):
         self.assertIn("error TS", text)
 
     def test_native_test_failure_surfaces_while_guard_passes(self) -> None:
-        build_consumer(self.root, bunfig=True, sentinel=True, failing=True)
+        build_consumer(
+            self.root, bunfig=True, sentinel=True, failing=True,
+            routing=routing_text(
+                fact_lines='test_command = "bun test"\ncompletion_timeout_seconds = 1\n'
+            ),
+        )
         process = run_guard(self.root)
         text = combined(process)
         self.assertNotEqual(process.returncode, 0, text)
@@ -792,6 +895,38 @@ class TypeScriptPreloadGuardTests(NativeConsumerTestCase):
         self.assertEqual(process.returncode, 2, text)
         self.assertIn("gajaestack:", text)
         self.assertFalse((self.root / "sentinel.txt").exists(), text)
+
+    def test_invalid_completion_budget_blocks_test_imports(self) -> None:
+        cases = [
+            (
+                "invalid-value",
+                routing_text(fact_lines="completion_timeout_seconds = true\n"),
+                "must be an integer from 1 to 9007199254740991",
+            ),
+            (
+                "misplaced",
+                "completion_timeout_seconds = 30\n" + routing_text(),
+                "supported only as a direct [fact] key",
+            ),
+            (
+                "missing-test-command",
+                routing_text(fact_lines="completion_timeout_seconds = 30\n"),
+                "requires a nonblank fact.test_command",
+            ),
+        ]
+        for case, routing, expected in cases:
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    build_consumer(root, routing=routing, bunfig=True, sentinel=True)
+                    process = run_guard(root)
+                    text = combined(process)
+                    self.assertEqual(process.returncode, 2, text)
+                    self.assertIn(expected, text)
+                    self.assertFalse((root / "sentinel.txt").exists(), text)
+                    self.assertNotIn("sentinel ran", text)
+                    self.assertNotIn("Typecheck:", text)
+                    self.assertNotIn("Lint:", text)
 
     def test_guard_timing_env_reports_phases_and_keeps_sentinel(self) -> None:
         build_consumer(self.root, bunfig=True, sentinel=True)

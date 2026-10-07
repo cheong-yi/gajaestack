@@ -59,6 +59,43 @@ def _origin_matches(origin: object, expected: Path) -> bool:
     return actual.is_relative_to(expected) if expected.is_dir() else actual == expected
 
 
+COMPLETION_TIMEOUT_FIELD = "completion_timeout_seconds"
+COMPLETION_TIMEOUT_MAX = 9007199254740991
+
+
+def _completion_budget(policy: dict) -> None:
+    """Reject an unusable outer completion budget before protected work."""
+
+    def walk(node: object, path: tuple[str, ...]) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == COMPLETION_TIMEOUT_FIELD and path != ("fact",):
+                    found = ".".join((*path, key))
+                    raise PrerequisiteError(
+                        f"{COMPLETION_TIMEOUT_FIELD} is supported only as a direct "
+                        f"[fact] key (found at {found})"
+                    )
+                walk(value, (*path, key))
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                walk(item, (*path, str(index)))
+
+    walk(policy, ())
+    fact = policy.get("fact")
+    if isinstance(fact, dict) and COMPLETION_TIMEOUT_FIELD in fact:
+        value = fact[COMPLETION_TIMEOUT_FIELD]
+        if type(value) is not int or not 1 <= value <= COMPLETION_TIMEOUT_MAX:
+            raise PrerequisiteError(
+                f"fact.{COMPLETION_TIMEOUT_FIELD} must be an integer from 1 to "
+                f"{COMPLETION_TIMEOUT_MAX} when present"
+            )
+        test_command = fact.get("test_command")
+        if not isinstance(test_command, str) or not test_command.strip():
+            raise PrerequisiteError(
+                f"fact.{COMPLETION_TIMEOUT_FIELD} requires a nonblank fact.test_command"
+            )
+
+
 def ensure_prerequisites(config) -> dict:
     """Validate once before conftest/test imports; return the authoritative facts."""
     cached = getattr(config, "_gajaestack_prerequisites", None)
@@ -74,6 +111,7 @@ def ensure_prerequisites(config) -> dict:
     fact = policy.get("fact")
     if not isinstance(fact, dict) or type(fact.get("schema_version")) is not int or fact["schema_version"] != 1:
         raise PrerequisiteError("[fact] schema_version=1 is required")
+    _completion_budget(policy)
     selected = _strings(fact.get("selected_components"), "fact.selected_components")
     if "guard" not in selected:
         raise PrerequisiteError("pytest_guard requires explicit guard selection")

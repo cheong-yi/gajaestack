@@ -39,6 +39,8 @@ BINDING_FIELD = "required_ruff_before_pytest"
 CORE_FACT_STRINGS = ("affected_test_command", "test_command")
 OPTIONAL_FACT_STRINGS = ("mypy_command",)
 RUFF_FACT_STRINGS = ("ruff_command", "ruff_format_command")
+COMPLETION_TIMEOUT_FIELD = "completion_timeout_seconds"
+COMPLETION_TIMEOUT_MAX = 9007199254740991
 FACT_CORE_ERROR = (
     "fact must state quick and full local commands, Python version, no CI jobs, "
     "and no PCD enforcement"
@@ -188,6 +190,8 @@ def routing_policy_file_errors(policy_file: Path) -> list[str]:
 
     required_checks = set(selections.get("required", ()))
     errors.extend(_fact_errors(policy_file, policy.get("fact"), required_checks))
+    for error in completion_budget_errors(policy):
+        errors.append(f"{policy_file}: {error}")
     facts = policy.get("fact", {})
     components = facts.get("selected_components", []) if isinstance(facts, dict) else []
     if isinstance(components, list) and ("guard" in components or "ruff" in components):
@@ -242,6 +246,45 @@ def routing_policy_file_errors(policy_file: Path) -> list[str]:
     if isinstance(components, list) and "typescript-guard" in components and "typescript" not in components:
         errors.append(f"{policy_file}: typescript-guard requires typescript")
     return errors
+
+
+def completion_budget_errors(policy: dict) -> list[str]:
+    """Pure completion-budget checks; caller supplies any file/path prefix."""
+    errors: list[str] = []
+    for place in _misplaced_completion_budget(policy, ()):
+        errors.append(
+            f"{COMPLETION_TIMEOUT_FIELD} is supported only as a direct [fact] key "
+            f"(found at {'.'.join(place)})"
+        )
+    fact = policy.get("fact")
+    if isinstance(fact, dict) and COMPLETION_TIMEOUT_FIELD in fact:
+        value = fact[COMPLETION_TIMEOUT_FIELD]
+        if type(value) is not int or not 1 <= value <= COMPLETION_TIMEOUT_MAX:
+            errors.append(
+                f"fact.{COMPLETION_TIMEOUT_FIELD} must be an integer from 1 to "
+                f"{COMPLETION_TIMEOUT_MAX} when present"
+            )
+        test_command = fact.get("test_command")
+        if not isinstance(test_command, str) or not test_command.strip():
+            errors.append(
+                f"fact.{COMPLETION_TIMEOUT_FIELD} requires a nonblank fact.test_command"
+            )
+    return errors
+
+
+def _misplaced_completion_budget(
+    node: object, path: tuple[str, ...]
+) -> list[tuple[str, ...]]:
+    places: list[tuple[str, ...]] = []
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == COMPLETION_TIMEOUT_FIELD and path != ("fact",):
+                places.append((*path, key))
+            places.extend(_misplaced_completion_budget(value, (*path, key)))
+    elif isinstance(node, list):
+        for index, item in enumerate(node):
+            places.extend(_misplaced_completion_budget(item, (*path, str(index))))
+    return places
 
 
 def _fact_errors(policy_file: Path, facts: object, required_checks: set[str]) -> list[str]:

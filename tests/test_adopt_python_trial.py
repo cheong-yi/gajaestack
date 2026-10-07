@@ -1213,6 +1213,7 @@ class PythonTrialAdoptionTests(unittest.TestCase):
             "no completion command is declared, named, or invented here", text
         )
         self.assertNotIn("one completion command:", text)
+        self.assertNotIn("outer completion budget:", text)
 
     def test_list_describes_routing_guidance_as_rendered_completion_command(
         self,
@@ -1227,6 +1228,362 @@ class PythonTrialAdoptionTests(unittest.TestCase):
         )
         self.assertIn("one completion command", text)
         self.assertIn("copying it is not activation and proves no wiring", text)
+
+    def test_preview_and_guidance_expose_unconfigured_completion_budget(self) -> None:
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        kit_facts = (KIT / "python/routing.toml").read_bytes()
+        self.facts.write_bytes(kit_facts)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), "routing"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn("one completion command: python -m pytest", text)
+        self.assertIn("outer completion budget: unconfigured", text)
+        self.assertIn("completion_timeout_seconds is absent", text)
+
+        apply(self.root, ["routing"])
+        agents = self.agents.read_text(encoding="utf-8")
+        self.assertIn("Outer completion budget: unconfigured", agents)
+        self.assertNotIn("{{completion_budget}}", agents)
+        self.assertEqual(self.facts.read_bytes(), kit_facts)
+        self.assertFalse(self.ownership.exists())
+
+    def test_preview_and_guidance_expose_declared_completion_budget_seconds(
+        self,
+    ) -> None:
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        kit_facts = (KIT / "python/routing.toml").read_bytes()
+        facts_bytes = kit_facts.replace(
+            b'test_command = "python -m pytest"',
+            b'test_command = "python -m pytest"\ncompletion_timeout_seconds = 3600',
+        )
+        self.assertNotEqual(facts_bytes, kit_facts)
+        self.facts.write_bytes(facts_bytes)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), "routing"])
+        self.assertEqual(result, 0)
+        text = output.getvalue()
+        self.assertIn("one completion command: python -m pytest", text)
+        self.assertIn("outer completion budget: 3600 seconds", text)
+        self.assertIn("declared [fact].test_command scope only", text)
+
+        apply(self.root, ["routing"])
+        agents = self.agents.read_text(encoding="utf-8")
+        self.assertIn("Outer completion budget: 3600 seconds", agents)
+        self.assertNotIn("{{completion_budget}}", agents)
+        # Existing consumer facts are never rewritten by adoption.
+        self.assertEqual(self.facts.read_bytes(), facts_bytes)
+        self.assertFalse(self.ownership.exists())
+
+    def test_invalid_completion_budget_facts_are_rejected_before_any_write(
+        self,
+    ) -> None:
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        kit_facts = (KIT / "python/routing.toml").read_bytes()
+        invalid_facts = [
+            (
+                f"invalid value {value.decode('ascii')}",
+                kit_facts.replace(
+                    b'test_command = "python -m pytest"',
+                    b'test_command = "python -m pytest"\n'
+                    b"completion_timeout_seconds = " + value,
+                ),
+            )
+            for value in (
+                b"0",
+                b"-1",
+                b"3600.5",
+                b'"3600"',
+                b"true",
+                b"9007199254740992",
+            )
+        ]
+        invalid_facts += [
+            ("placement at top level", b"completion_timeout_seconds = 3600\n" + kit_facts),
+            (
+                "placement in [python]",
+                kit_facts + b"completion_timeout_seconds = 3600\n",
+            ),
+        ]
+        for label, facts_bytes in invalid_facts:
+            with self.subTest(label):
+                self.assertNotEqual(facts_bytes, kit_facts)
+                self.facts.write_bytes(facts_bytes)
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error):
+                    result = main(
+                        ["adopt", "--root", str(self.root), "routing", "--apply"]
+                    )
+                self.assertEqual(result, 1)
+                self.assertIn("completion_timeout_seconds", error.getvalue())
+                self.assertFalse(self.agents.exists())
+                self.assertFalse(self.ownership.exists())
+                self.assertEqual(self.facts.read_bytes(), facts_bytes)
+
+    def test_preview_and_apply_reject_invalid_budget_for_any_selection(self) -> None:
+        # Non-routing selections must not bypass budget validation on --apply.
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        facts_bytes = (KIT / "python/routing.toml").read_bytes().replace(
+            b'test_command = "python -m pytest"',
+            b'test_command = "python -m pytest"\ncompletion_timeout_seconds = 0',
+        )
+        self.facts.write_bytes(facts_bytes)
+        for flags in ([], ["--apply"]):
+            with self.subTest(flags=flags):
+                error = io.StringIO()
+                with contextlib.redirect_stderr(error):
+                    result = main(["adopt", "--root", str(self.root), "ruff", *flags])
+                self.assertEqual(result, 1)
+                self.assertIn("completion_timeout_seconds", error.getvalue())
+                self.assertFalse(self.ruff_config.exists())
+                self.assertFalse(self.ownership.exists())
+                self.assertEqual(self.facts.read_bytes(), facts_bytes)
+
+    def test_completion_budget_renders_configured_or_unconfigured(self) -> None:
+        self.assertEqual(gajaestack._completion_budget({}), "unconfigured")
+        self.assertEqual(gajaestack._completion_budget({"fact": {}}), "unconfigured")
+        self.assertEqual(
+            gajaestack._completion_budget({"fact": {"test_command": "run"}}),
+            "unconfigured",
+        )
+        self.assertEqual(
+            gajaestack._completion_budget(
+                {"fact": {"test_command": "run", "completion_timeout_seconds": 3600}}
+            ),
+            "3600 seconds",
+        )
+        self.assertEqual(
+            gajaestack._completion_budget(
+                {
+                    "fact": {
+                        "test_command": "run",
+                        "completion_timeout_seconds": 9007199254740991,
+                    }
+                }
+            ),
+            "9007199254740991 seconds",
+        )
+        invalid_policies = [
+            {"fact": {"test_command": "run", "completion_timeout_seconds": 0}},
+            {"fact": {"test_command": "run", "completion_timeout_seconds": -5}},
+            {"fact": {"test_command": "run", "completion_timeout_seconds": True}},
+            {"fact": {"test_command": "run", "completion_timeout_seconds": "3600"}},
+            {"fact": {"test_command": "run", "completion_timeout_seconds": 1.5}},
+            {
+                "fact": {
+                    "test_command": "run",
+                    "completion_timeout_seconds": 9007199254740992,
+                }
+            },
+            {"fact": {"completion_timeout_seconds": 600}},
+            {"completion_timeout_seconds": 600},
+            {"fact": {}, "python": {"completion_timeout_seconds": 600}},
+            {"fact": {}, "typescript": {"completion_timeout_seconds": 600}},
+        ]
+        for policy in invalid_policies:
+            with self.subTest(policy=policy):
+                with self.assertRaisesRegex(
+                    AdoptionError, "completion_timeout_seconds"
+                ):
+                    gajaestack._completion_budget(policy)
+
+    def test_facts_templates_declare_no_active_completion_budget(self) -> None:
+        # Both CLI templates stay unconfigured by default: explanatory comments
+        # only, never an active key or a universal 600/300-style default.
+        for label, text in (
+            ("typescript", gajaestack.TYPESCRIPT_FACTS_TEMPLATE.decode("utf-8")),
+            ("python", (KIT / "python/routing.toml").read_text(encoding="utf-8")),
+        ):
+            with self.subTest(template=label):
+                active = [
+                    line
+                    for line in text.splitlines()
+                    if "completion_timeout_seconds" in line
+                    and not line.lstrip().startswith("#")
+                ]
+                self.assertEqual(active, [])
+                comments = [
+                    line
+                    for line in text.splitlines()
+                    if line.lstrip().startswith("#")
+                    and "completion_timeout_seconds" in line
+                ]
+                self.assertTrue(comments)
+                self.assertTrue(all("project-owned" in line for line in comments))
+        self.assertEqual(routing_policy_file_errors(KIT / "python/routing.toml"), [])
+
+        apply(self.root, ["typescript"], facts_template="typescript")
+        facts_bytes = self.facts.read_bytes()
+        self.assertEqual(facts_bytes, gajaestack.TYPESCRIPT_FACTS_TEMPLATE)
+        self.assertEqual(routing_policy_file_errors(self.facts), [])
+        ownership_bytes = self.ownership.read_bytes()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), "routing"])
+        self.assertEqual(result, 0)
+        self.assertIn("outer completion budget: unconfigured", output.getvalue())
+        apply(self.root, ["routing"])
+        # Adoption preserves template facts and the ownership record untouched.
+        self.assertEqual(self.facts.read_bytes(), facts_bytes)
+        self.assertEqual(self.ownership.read_bytes(), ownership_bytes)
+        agents = self.agents.read_text(encoding="utf-8")
+        self.assertIn("Outer completion budget: unconfigured", agents)
+        self.assertNotIn("{{completion_budget}}", agents)
+
+
+    # --- read-only native binding status in preview guidance ----------------
+
+    def write_typescript_guard_facts(self) -> None:
+        facts = gajaestack.TYPESCRIPT_FACTS_TEMPLATE.decode("utf-8").replace(
+            'selected_components = ["routing", "typescript"]',
+            'selected_components = ["routing", "typescript", "typescript-guard"]',
+        )
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        self.facts.write_text(facts, encoding="utf-8")
+
+    def preview_guidance(self, *components: str) -> tuple[int, str]:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            result = main(["adopt", "--root", str(self.root), *components])
+        return result, output.getvalue()
+
+    def test_binding_status_distinguishes_not_configured_and_configured(
+        self,
+    ) -> None:
+        self.write_typescript_guard_facts()
+        bunfig = self.root / "bunfig.toml"
+        # Absent native config: not configured, manual merge remedy, no write.
+        result, text = self.preview_guidance("routing")
+        self.assertEqual(result, 0)
+        self.assertIn("typescript binding status: selected but not configured", text)
+        self.assertIn("bunfig.toml is absent", text)
+        self.assertIn("reviewed consumer change", text)
+        self.assertIn("never edits native configuration", text)
+        self.assertFalse(bunfig.exists())
+
+        # Present but missing the guard entry: still not configured, and the
+        # remedy preserves existing preloads and their order.
+        original = b'[test]\npreload = ["./existing-preload.ts"]\n'
+        bunfig.write_bytes(original)
+        result, text = self.preview_guidance("routing")
+        self.assertEqual(result, 0)
+        self.assertIn("typescript binding status: selected but not configured", text)
+        self.assertIn(
+            ".gajaestack/typescript/preload.ts entry in bunfig.toml [test].preload",
+            text,
+        )
+        self.assertIn("preserving existing preloads and their order", text)
+        self.assertEqual(bunfig.read_bytes(), original)
+
+        # Found entry: configured, explicitly not demonstrated (no runtime proof).
+        bunfig.write_bytes(
+            b'[test]\npreload = ["./existing-preload.ts", '
+            b'"./.gajaestack/typescript/preload.ts"]\n'
+        )
+        result, text = self.preview_guidance("routing")
+        self.assertEqual(result, 0)
+        self.assertIn("typescript binding status: configured", text)
+        self.assertIn("configured, not demonstrated", text)
+        self.assertIn("proves no runtime behavior", text)
+        self.assertIn("seeded rejection to demonstrate", text)
+        self.assertNotIn("demonstrated and proven", text)
+
+    def test_unselected_guard_is_manual_only_and_standalone_check_is_named(
+        self,
+    ) -> None:
+        self.facts.parent.mkdir(parents=True, exist_ok=True)
+        self.facts.write_bytes(gajaestack.TYPESCRIPT_FACTS_TEMPLATE)
+        result, text = self.preview_guidance("routing")
+        self.assertEqual(result, 0)
+        self.assertIn("typescript-guard absent from fact.selected_components", text)
+        self.assertIn("manual-only", text)
+        self.assertIn(
+            "standalone selected check (no declared binding covers it; run it "
+            "explicitly once adopted): bun .gajaestack/typescript/check.ts",
+            text,
+        )
+        self.assertNotIn("declared binding: typescript-guard", text)
+
+        # Kit Python template facts select ruff without required-ruff, so the
+        # Python standalone completion check is the one named.
+        self.facts.write_bytes((KIT / "python/routing.toml").read_bytes())
+        result, text = self.preview_guidance("routing")
+        self.assertEqual(result, 0)
+        self.assertIn(
+            "python .gajaestack/scripts/check_changed_python.py --full", text
+        )
+        self.assertNotIn("bun .gajaestack/typescript/check.ts", text)
+        self.assertNotIn("typescript binding status", text)
+
+        # Separate explicit-review instructions always close the guidance.
+        self.assertIn("review explicitly: consumer facts", text)
+        self.assertIn("review explicitly: native wiring", text)
+        self.assertIn("performs no automatic repair", text)
+
+    def test_review_instructions_print_even_without_facts(self) -> None:
+        result, text = self.preview_guidance("ruff")
+        self.assertEqual(result, 0)
+        self.assertIn("consumer facts absent at .gajaestack/routing.toml", text)
+        self.assertIn("review explicitly: consumer facts", text)
+        self.assertIn("review explicitly: native wiring", text)
+        self.assertNotIn("one completion command:", text)
+        self.assertNotIn("outer completion budget:", text)
+
+    def test_malformed_or_unreadable_bunfig_is_unverified_and_never_written(
+        self,
+    ) -> None:
+        self.write_typescript_guard_facts()
+        bunfig = self.root / "bunfig.toml"
+        malformed = b"[test\npreload ="
+        bunfig.write_bytes(malformed)
+        result, text = self.preview_guidance("routing")
+        self.assertEqual(result, 0)
+        self.assertIn("typescript binding status: unverified", text)
+        self.assertIn("malformed", text)
+        self.assertIn("review or repair it yourself", text)
+        self.assertEqual(bunfig.read_bytes(), malformed)
+
+        bunfig.unlink()
+        bunfig.mkdir()  # unreadable native config: not a regular file
+        result, text = self.preview_guidance("routing")
+        self.assertEqual(result, 0)
+        self.assertIn("typescript binding status: unverified", text)
+        self.assertIn("not a regular file", text)
+        self.assertTrue(bunfig.is_dir())
+
+    def test_apply_never_writes_native_config_or_records_it_as_owned(
+        self,
+    ) -> None:
+        self.write_typescript_guard_facts()
+        bunfig = self.root / "bunfig.toml"
+        original = (
+            b'[test]\npreload = ["./existing-preload.ts", '
+            b'"./.gajaestack/typescript/preload.ts"]\n'
+        )
+        bunfig.write_bytes(original)
+        facts_before = self.facts.read_bytes()
+        result, text = self.preview_guidance("typescript", "typescript-guard")
+        self.assertEqual(result, 0)
+        self.assertIn("configured, not demonstrated", text)
+        self.assertFalse(self.ownership.exists())  # preview writes nothing
+
+        changed = apply(self.root, ["typescript", "typescript-guard"])
+        self.assertEqual(bunfig.read_bytes(), original)  # native config untouched
+        self.assertIn("./existing-preload.ts", bunfig.read_text(encoding="utf-8"))
+        self.assertEqual(self.facts.read_bytes(), facts_before)
+        document = json.loads(self.ownership.read_text(encoding="utf-8"))
+        self.assertEqual(document["schema"], OWNERSHIP_SCHEMA)
+        self.assertNotIn("bunfig.toml", document["assets"])
+        self.assertNotIn(".gajaestack/routing.toml", document["assets"])
+        self.assertEqual(
+            {Path(destination).name for destination in document["assets"]},
+            {"check.ts", "preload.ts"},
+        )
+        self.assertTrue(
+            any(destination.name == "preload.ts" for destination in changed)
+        )
 
 
 class MechanicalAdoptionTests(unittest.TestCase):

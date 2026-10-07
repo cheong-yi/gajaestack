@@ -83,6 +83,14 @@ class PythonMechanicalTests(unittest.TestCase):
             text += "[python.module_origins]\n" + "".join(f"{json.dumps(key)} = {json.dumps(value)}\n" for key, value in self.origins.items())
         (self.root / ".gajaestack/routing.toml").write_text(text)
 
+    def facts_with_budget(self, snippet: str) -> None:
+        """Insert extra lines at the head of the fixture's [fact] table."""
+        path = self.root / ".gajaestack/routing.toml"
+        text = path.read_text(encoding="utf-8")
+        path.write_text(
+            text.replace("[fact]\n", "[fact]\n" + snippet, 1), encoding="utf-8"
+        )
+
     def run_native(self, *args, helper=False):
         command = [PYTHON, "-B"]
         command += [".gajaestack/scripts/check_changed_python.py"] if helper else ["-m", "pytest", "-q", "-s"]
@@ -211,6 +219,9 @@ class PythonMechanicalTests(unittest.TestCase):
 
     def test_native_test_failure_is_not_hidden(self):
         (self.root / "tests/test_app.py").write_text("def test_fail():\n    assert False, 'native-test-seed'\n")
+        self.facts_with_budget(
+            'completion_timeout_seconds = 1\ntest_command = "python -B -m pytest"\n'
+        )
         result = self.run_native()
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertTrue((self.root / "conftest-imported").exists())
@@ -276,6 +287,159 @@ class PythonMechanicalTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("expanded to full selected scope", result.stdout)
         self.assertIn("app.py", result.stdout)
+
+    def test_completion_budget_valid_when_absent_or_configured(self):
+        self.configure(bound=False)
+        self.selected = ["guard"]
+        for snippet in (
+            None,
+            'completion_timeout_seconds = 600\ntest_command = "python -m pytest"\n',
+        ):
+            with self.subTest(snippet=snippet):
+                self.facts()
+                if snippet is not None:
+                    self.facts_with_budget(snippet)
+                result = self.run_native()
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(
+                    "prerequisites passed before protected collection",
+                    result.stdout,
+                )
+
+    def test_invalid_completion_budget_rejects_before_protected_imports(self):
+        (self.root / "protected_module.py").write_text(
+            'from pathlib import Path\nPath("required-imported").write_text("yes")\n'
+        )
+        self.options["imports"] = ["protected_module"]
+        for value in (
+            "true",
+            "false",
+            "0",
+            "-1",
+            '"600"',
+            "1.5",
+            "1.0",
+            "nan",
+            "inf",
+            "9007199254740992",
+            "18446744073709551616",
+        ):
+            with self.subTest(value=value):
+                self.facts()
+                self.facts_with_budget(
+                    f"completion_timeout_seconds = {value}\n"
+                    'test_command = "python -m pytest"\n'
+                )
+                result = self.run_native()
+                self.assert_rejected_before_import(result)
+                self.assertFalse((self.root / "required-imported").exists())
+                self.assertIn(
+                    "completion_timeout_seconds must be an integer",
+                    result.stdout + result.stderr,
+                )
+
+    def test_completion_budget_requires_nonblank_test_command(self):
+        for snippet in (
+            "completion_timeout_seconds = 600\n",
+            'completion_timeout_seconds = 600\ntest_command = "   "\n',
+        ):
+            with self.subTest(snippet=snippet):
+                self.facts()
+                self.facts_with_budget(snippet)
+                result = self.run_native()
+                self.assert_rejected_before_import(result)
+                self.assertIn(
+                    "requires a nonblank fact.test_command",
+                    result.stdout + result.stderr,
+                )
+
+    def test_completion_budget_outside_fact_rejects_before_protected_imports(self):
+        path = self.root / ".gajaestack/routing.toml"
+        original = path.read_text(encoding="utf-8")
+        cases = {
+            "root": original.replace(
+                "[fact]\n", "completion_timeout_seconds = 600\n[fact]\n", 1
+            ),
+            "python": original.replace(
+                "[python]\n", "[python]\ncompletion_timeout_seconds = 600\n", 1
+            ),
+            "nested": original.replace(
+                "[python]\n",
+                "[fact.extra]\ncompletion_timeout_seconds = 600\n[python]\n",
+                1,
+            ),
+        }
+        for name, text in cases.items():
+            with self.subTest(name=name):
+                path.write_text(text, encoding="utf-8")
+                result = self.run_native()
+                self.assert_rejected_before_import(result)
+                self.assertIn(
+                    "only as a direct [fact] key", result.stdout + result.stderr
+                )
+        path.write_text(original, encoding="utf-8")
+
+    def test_full_scope_validates_completion_budget_before_dispatch(self):
+        for snippet, needle in (
+            (
+                'completion_timeout_seconds = 0\ntest_command = "python -m pytest"\n',
+                "completion_timeout_seconds must be an integer",
+            ),
+            (
+                "completion_timeout_seconds = 600\n",
+                "requires a nonblank fact.test_command",
+            ),
+        ):
+            with self.subTest(snippet=snippet):
+                self.facts()
+                self.facts_with_budget(snippet)
+                result = self.run_native("--full", helper=True)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertIn(needle, result.stdout + result.stderr)
+        self.facts()
+        path = self.root / ".gajaestack/routing.toml"
+        path.write_text(
+            path.read_text(encoding="utf-8").replace(
+                "[python]\n", "[python]\ncompletion_timeout_seconds = 600\n", 1
+            ),
+            encoding="utf-8",
+        )
+        result = self.run_native("--full", helper=True)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("only as a direct [fact] key", result.stdout + result.stderr)
+
+    def test_quick_mode_reads_facts_only_when_a_trigger_changes(self):
+        facts = self.root / ".gajaestack/routing.toml"
+        facts.write_text(
+            facts.read_text(encoding="utf-8").replace(
+                "[fact]\n", "[fact]\ncompletion_timeout_seconds = 0\n", 1
+            ),
+            encoding="utf-8",
+        )
+        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c", "user.name=gajaestack-test",
+                "-c", "user.email=gajaestack-test@example.invalid",
+                "-c", "commit.gpgsign=false",
+                "commit", "-qm", "seed",
+            ],
+            cwd=self.root,
+            check=True,
+        )
+        # Nothing changed: quick mode reads no facts, so the invalid budget passes.
+        result = self.run_native(helper=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("completion_timeout_seconds", result.stdout + result.stderr)
+        # Touching the facts file expands quick mode; the read rejects the budget.
+        facts.write_text(
+            facts.read_text(encoding="utf-8") + "# touched\n", encoding="utf-8"
+        )
+        result = self.run_native(helper=True)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("completion_timeout_seconds", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

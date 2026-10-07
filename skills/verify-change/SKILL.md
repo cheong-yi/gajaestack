@@ -9,12 +9,12 @@ when_to_run: After identifying the changed behavior and before claiming completi
 # Verify a change
 
 1. Inspect the changed behavior, relevant existing tests, and documented commands or harnesses. Reuse the project's recipes, harnesses, test conventions, and evidence format; do not generate new docs or harnesses for every change.
-   For a corrected defect, add or update a focused regression test at the layer where the behavior can be observed; include the relevant invalid or failure case rather than only a happy path.
-2. Select a reproducible path a user would take. State the expected observations, relevant side effects, and negative or failure cases before running it. Include a health check or launch step when the path requires one.
+   For a corrected defect, add or update a focused regression test at the layer where the behavior can be observed; include the relevant invalid or failure case rather than only a happy path. When the risk justifies it, capture fails-before/passes-after evidence: observe the test (or a minimal reproducer) failing on the pre-fix behavior—against the prior revision, or after briefly reintroducing the defect, which you then revert—and passing after the fix.
+2. Select a reproducible path a user would take. State the behavioral contract as the oracle before running it: expected observations on success, expected failure behavior, and the relevant side effects, including side effects that must not occur. Include a health check or launch step when the path requires one.
 3. Run the actual path, not only a substitute or a check that cannot observe the changed behavior. Use processes and test state isolated to this verification; avoid interfering with existing processes or shared state.
 4. Capture the actions and results as evidence. Clean up only resources created by this verification, and preserve useful results after safe cleanup. Never invent or imply proof that was not observed.
    Keep test fixtures and disposable state isolated from retained evidence. Track ownership when creating resources; never infer permission to delete or terminate from a matching name alone.
-5. Report the exercised scope, observed results, limitations, and blockers. Do not turn a narrow pass into a blanket claim of success.
+5. Report the exercised scope, observed results—including any fails-before/passes-after runs—limitations, and blockers. Do not turn a narrow pass into a blanket claim of success.
 
 Use existing feature maps when the repository maintains them: update affected entries with the change and evidence, keeping the map aligned with actual behavior. Do not create a feature map where none exists just to satisfy this guidance.
 
