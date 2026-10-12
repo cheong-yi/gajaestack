@@ -127,6 +127,24 @@ class PythonPackageTests(unittest.TestCase):
                 [python, "-B", "-c", "import importlib.util; assert importlib.util.find_spec('pytest') is None"],
                 root, env,
             )
+            # Reject and recover while pytest is still absent.
+            (root / "example.py").write_text("import os\nvalue = 1\n")
+            rejected_lint = subprocess.run(
+                [str(venv / "bin/gajaestack-python-check"), "--full"],
+                cwd=root, env=env, text=True, capture_output=True,
+            )
+            rejected_text = rejected_lint.stdout + rejected_lint.stderr
+            self.assertNotEqual(rejected_lint.returncode, 0, rejected_text)
+            self.assertIn("Full selected scope: 1 file(s)", rejected_text)
+            self.assertIn("F401", rejected_text)
+            (root / "example.py").write_text("value = 1\n")
+            recovered_lint = subprocess.run(
+                [str(venv / "bin/gajaestack-python-check"), "--full"],
+                cwd=root, env=env, text=True, capture_output=True,
+            )
+            recovered_text = recovered_lint.stdout + recovered_lint.stderr
+            self.assertEqual(recovered_lint.returncode, 0, recovered_text)
+            self.assertIn("Full selected scope: 1 file(s)", recovered_text)
             # Native tool provisioning is explicit and offline, separate from kit install.
             self.run_command([python, "-B", "-m", "pip", "install", "--no-index", "--find-links", WHEELHOUSE, "pytest==9.1.1"], root, env)
             (root / "test_native.py").write_text("def test_native():\n    assert 2 + 2 == 4\n")
@@ -150,6 +168,7 @@ class PythonPackageTests(unittest.TestCase):
                 "description: Consumer-owned skill retained through kit discovery.\n"
                 "---\n\nConsumer skill body.\n"
             )
+            consumer_before = consumer_skill.read_bytes()
             host_config = root / ".gjc/config.yml"
             host_config.write_text(
                 "configSchemaVersion: 2\nskills:\n  customDirectories:\n    - "
@@ -181,6 +200,18 @@ class PythonPackageTests(unittest.TestCase):
                     ),
                     "consumer-owned skill was not retained",
                 )
+                # Candidates are catalog evidence, not prompt proof; diagnostics leak names.
+                selected = next(
+                    item
+                    for item in candidates
+                    if Path(item["path"]) == skill_root / "native-quality/SKILL.md"
+                )
+                self.assertIn(
+                    selected["description"],
+                    (skill_root / "native-quality/SKILL.md").read_text(
+                        encoding="utf-8"
+                    ),
+                )
             try:
                 version_file.write_text(original.replace('0.1.0', '0.1.1') + '\nUPGRADE_MARKER = "distinct-local-release"\n')
                 skill_file.write_text(original_skill + "\nLocal upgrade verification marker: distinct-guidance-release.\n")
@@ -190,12 +221,46 @@ class PythonPackageTests(unittest.TestCase):
                 manifest.write_text(json.dumps(document))
                 self.run_command([PYTHON, "-B", "-m", "pip", "wheel", "--no-index", "--no-deps", "--no-build-isolation", "--wheel-dir", str(self.dist), str(self.stage)], root)
                 upgraded = next(self.dist.glob("gajaestack-0.1.1-*.whl"))
+                self.assertNotEqual(upgraded.read_bytes(), self.wheel.read_bytes())
                 lock.write_text(f"gajaestack @ {upgraded.as_uri()} --hash=sha256:{hashlib.sha256(upgraded.read_bytes()).hexdigest()}\n")
                 self.run_command(install, root, env)
                 result = self.run_command([python, "-B", "-c", "from gajaestack import __version__, UPGRADE_MARKER; print(__version__, UPGRADE_MARKER)"], root, env)
                 self.assertEqual(result.stdout.strip(), "0.1.1 distinct-local-release")
                 self.assertIn("distinct-guidance-release", (skill_root / "native-quality/SKILL.md").read_text())
                 self.assertEqual(host_config.read_bytes(), host_before)
+                if GJC:
+                    # Selection and consumer-owned bytes survive a distinct pinned upgrade.
+                    reobserved = self.run_command(
+                        [GJC, "skills", "discover", "--source", "all", "--json"],
+                        root, env,
+                    )
+                    reobserved_candidates = json.loads(reobserved.stdout)["candidates"]
+                    reobserved_kit_paths = {
+                        Path(item["path"])
+                        for item in reobserved_candidates
+                        if str(skill_root) in item["path"]
+                    }
+                    self.assertEqual(
+                        reobserved_kit_paths, {skill_root / "native-quality/SKILL.md"}
+                    )
+                    reobserved_selected = next(
+                        item
+                        for item in reobserved_candidates
+                        if Path(item["path"])
+                        == skill_root / "native-quality/SKILL.md"
+                    )
+                    self.assertIn(
+                        reobserved_selected["description"],
+                        (skill_root / "native-quality/SKILL.md").read_text(
+                            encoding="utf-8"
+                        ),
+                    )
+                    reobserved_names = {
+                        item["name"] for item in reobserved_candidates
+                    }
+                    self.assertIn("consumer-notes", reobserved_names)
+                    self.assertEqual(consumer_skill.read_bytes(), consumer_before)
+                    self.assertEqual(host_config.read_bytes(), host_before)
                 self.run_command(install + ["--force-reinstall"], root, env)
             finally:
                 version_file.write_text(original)
@@ -251,6 +316,123 @@ class PythonPackageTests(unittest.TestCase):
             self.assertFalse((root / ".hypothesis").exists())
             self.assertFalse((root / ".mypy_cache").exists())
             self.assertFalse((root / ".pytest_cache").exists())
+
+    def test_installed_routing_scb_check_advisory_selection_validation(self):
+        """scb-check is consumer-selected advisory; installing the kit installs no scb-check."""
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            root = base / "consumer"
+            root.mkdir()
+            site = base / "site"
+            self.run_command(
+                [PYTHON, "-B", "-m", "pip", "install", "--no-index", "--no-deps",
+                 "--no-compile", "--target", str(site), str(self.wheel)], root,
+            )
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(site)
+            # The kit ships no scb-check module, entry point, or executable.
+            with zipfile.ZipFile(self.wheel) as archive:
+                wheel_names = archive.namelist()
+                entrypoints = archive.read(
+                    next(
+                        name
+                        for name in wheel_names
+                        if name.endswith(".dist-info/entry_points.txt")
+                    )
+                ).decode()
+            self.assertFalse(any("scb" in name.lower() for name in wheel_names))
+            self.assertNotIn("scb", entrypoints.lower())
+            routing = site / "bin" / "gajaestack-routing"
+            self.assertTrue(routing.is_file())
+            self.assertFalse(
+                any("scb" in path.name.lower() for path in (site / "bin").iterdir())
+            )
+            self.run_command(
+                [PYTHON, "-B", "-S", "-c",
+                 "import importlib.util; "
+                 "assert importlib.util.find_spec('scb_check') is None; "
+                 "assert importlib.util.find_spec('scb') is None"],
+                root, env,
+            )
+            # Installed guidance exposes the scb-check command and advisory meaning.
+            for guidance in (
+                site / "gajaestack" / "routing" / "AGENTS.md",
+                site / "gajaestack_guidance" / "native-quality" / "SKILL.md",
+            ):
+                text = guidance.read_text(encoding="utf-8").lower()
+                self.assertIn("scb-check", text, str(guidance))
+                self.assertIn("advisory", text, str(guidance))
+                self.assertIn("scb_check_command", text, str(guidance))
+            example = site / "gajaestack" / "routing.toml"
+            self.assertTrue(example.is_file())
+            facts_dir = root / ".gajaestack"
+            facts_dir.mkdir()
+            routing_toml = facts_dir / "routing.toml"
+
+            def route(text):
+                routing_toml.write_text(text, encoding="utf-8")
+                return subprocess.run(
+                    [str(routing), "--root", str(root)],
+                    cwd=root, env=env, text=True, capture_output=True,
+                )
+
+            # Absence of scb-check selection keeps the packaged example valid.
+            default = route(example.read_text(encoding="utf-8"))
+            self.assertEqual(default.returncode, 0, default.stdout + default.stderr)
+            self.assertIn(" (valid)", default.stdout)
+            # Selection reuses the packaged facts example, replacing the unrelated
+            # components and dropping their commands.
+            base_facts = example.read_text(encoding="utf-8").replace(
+                'advisory = ["ruff-format", "mypy"]', 'advisory = ["scb-check"]'
+            ).replace(
+                'selected_components = ["mypy", "routing", "ruff"]',
+                'selected_components = ["scb-check"]\n'
+                'scb_check_command = "scb-check check src"',
+            )
+            facts_text = "".join(
+                line
+                for line in base_facts.splitlines(keepends=True)
+                if not line.startswith(
+                    ("ruff_command", "ruff_format_command", "mypy_command")
+                )
+            )
+            self.assertIn('advisory = ["scb-check"]', facts_text)
+            self.assertIn('selected_components = ["scb-check"]', facts_text)
+            self.assertIn('scb_check_command = "scb-check check src"', facts_text)
+            self.assertIn('python_version = "3.12"', facts_text)
+            selected = route(facts_text)
+            self.assertEqual(selected.returncode, 0, selected.stdout + selected.stderr)
+            self.assertIn(" (valid)", selected.stdout)
+            # Selection without the command fact is a consumer action, not a rewrite.
+            missing_command = "".join(
+                line
+                for line in facts_text.splitlines(keepends=True)
+                if not line.startswith("scb_check_command")
+            )
+            rejected_command = route(missing_command)
+            rejected_command_text = rejected_command.stdout + rejected_command.stderr
+            self.assertEqual(rejected_command.returncode, 1, rejected_command_text)
+            self.assertIn("scb", rejected_command_text.lower())
+            # A pre-3.12 runtime cannot run the selected advisory command.
+            old_python = facts_text.replace(
+                'python_version = "3.12"', 'python_version = "3.11"'
+            )
+            rejected_python = route(old_python)
+            rejected_python_text = rejected_python.stdout + rejected_python.stderr
+            self.assertEqual(rejected_python.returncode, 1, rejected_python_text)
+            self.assertIn("scb", rejected_python_text.lower())
+            # scb-check is advisory-only: required-category selection is rejected.
+            misplaced = facts_text.replace(
+                'advisory = ["scb-check"]', "advisory = []"
+            ).replace(
+                'required = ["pytest", "ruff-check"]',
+                'required = ["pytest", "ruff-check", "scb-check"]',
+            )
+            self.assertIn('required = ["pytest", "ruff-check", "scb-check"]', misplaced)
+            rejected_required = route(misplaced)
+            rejected_required_text = rejected_required.stdout + rejected_required.stderr
+            self.assertEqual(rejected_required.returncode, 1, rejected_required_text)
+            self.assertIn("scb", rejected_required_text.lower())
 
 
 if __name__ == "__main__":

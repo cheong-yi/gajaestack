@@ -68,6 +68,8 @@ def routing_text(
     *,
     selected: list[str] | None = None,
     required: list[str] | None = None,
+    advisory: list[str] | None = None,
+    on_demand: list[str] | None = None,
     typecheck: bool = True,
     lint: bool = True,
     paths: list[str] | None = None,
@@ -77,9 +79,13 @@ def routing_text(
     selected = ["typescript", "typescript-guard"] if selected is None else selected
     required = ["ts-typecheck", "ts-lint"] if required is None else required
     paths = ["src"] if paths is None else paths
+    categories = f"required = {toml_list(required)}\n"
+    if advisory is not None:
+        categories += f"advisory = {toml_list(advisory)}\n"
+    if on_demand is not None:
+        categories += f"on_demand = {toml_list(on_demand)}\n"
     return (
-        f"required = {toml_list(required)}\n"
-        "\n"
+        f"{categories}\n"
         "[fact]\n"
         "schema_version = 1\n"
         f"selected_components = {toml_list(selected)}\n"
@@ -452,6 +458,148 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
                     self.assertNotIn("missing executable:", text)
                     self.assertNotIn("Typecheck:", text)
                     self.assertNotIn("Lint:", text)
+
+    def test_scb_check_valid_independent_advisory_selection(self) -> None:
+        routing = routing_text(
+            selected=["typescript", "typescript-guard", "scb-check"],
+            advisory=["scb-check"],
+            fact_lines=(
+                'scb_check_command = "scb run --native"\n'
+                'python_version = "3.12.1"\n'
+            ),
+        )
+        build_consumer(self.root, routing=routing)
+        # The declared native command is never executed by this validator: this
+        # fixture provides no scb executable, yet the valid selection passes.
+        process = run_entry(self.root)
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertIn("Typecheck:", text)
+        self.assertIn("Lint:", text)
+
+    def test_scb_check_command_and_runtime_facts_enforced(self) -> None:
+        selected = ["typescript", "typescript-guard", "scb-check"]
+        command = 'scb_check_command = "scb run --native"\n'
+        runtime = 'python_version = "3.12"\n'
+        cases = [
+            (
+                "missing-command",
+                routing_text(
+                    selected=selected, advisory=["scb-check"], fact_lines=runtime
+                ),
+                "fact.scb_check_command must be a nonblank string",
+            ),
+            (
+                "blank-command",
+                routing_text(
+                    selected=selected,
+                    advisory=["scb-check"],
+                    fact_lines='scb_check_command = "  "\n' + runtime,
+                ),
+                "fact.scb_check_command must be a nonblank string",
+            ),
+            (
+                "missing-runtime",
+                routing_text(
+                    selected=selected, advisory=["scb-check"], fact_lines=command
+                ),
+                "fact.python_version must name a numeric Python runtime >= 3.12",
+            ),
+            (
+                "old-runtime",
+                routing_text(
+                    selected=selected,
+                    advisory=["scb-check"],
+                    fact_lines=command + 'python_version = "3.11"\n',
+                ),
+                "fact.python_version must name a numeric Python runtime >= 3.12",
+            ),
+            (
+                "absurd-runtime",
+                routing_text(
+                    selected=selected,
+                    advisory=["scb-check"],
+                    fact_lines=command + 'python_version = "' + "9" * 20 + '.12"\n',
+                ),
+                "fact.python_version must name a numeric Python runtime >= 3.12",
+            ),
+        ]
+        for case, routing, expected in cases:
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    # No tool symlinks are installed, so any tool resolution
+                    # before this validation would surface as 127 missing executable.
+                    build_consumer(root, routing=routing, tools=())
+                    process = run_entry(root)
+                    text = combined(process)
+                    self.assertEqual(process.returncode, 2, text)
+                    self.assertIn(expected, text)
+                    self.assertNotIn("missing executable:", text)
+                    self.assertNotIn("Typecheck:", text)
+                    self.assertNotIn("Lint:", text)
+
+    def test_scb_check_advisory_only_category_and_deselection(self) -> None:
+        facts = 'scb_check_command = "scb run --native"\npython_version = "3.12"\n'
+        cases = [
+            (
+                "required-category",
+                routing_text(
+                    required=["ts-typecheck", "ts-lint", "scb-check"],
+                    fact_lines=facts,
+                ),
+                "scb-check is advisory-only; remove it from required",
+            ),
+            (
+                "on-demand-category",
+                routing_text(on_demand=["scb-check"], fact_lines=facts),
+                "scb-check is advisory-only; remove it from on_demand",
+            ),
+            (
+                "advisory-without-component",
+                routing_text(advisory=["scb-check"], fact_lines=facts),
+                "advisory selects 'scb-check' but fact.selected_components omits it",
+            ),
+            (
+                "component-without-advisory",
+                routing_text(
+                    selected=["typescript", "typescript-guard", "scb-check"],
+                    fact_lines=facts,
+                ),
+                "fact.selected_components selects 'scb-check' but advisory omits it",
+            ),
+            (
+                "stale-command",
+                routing_text(fact_lines=facts),
+                "fact.scb_check_command must be removed",
+            ),
+        ]
+        for case, routing, expected in cases:
+            with self.subTest(case=case):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = Path(tmp)
+                    build_consumer(root, routing=routing, tools=())
+                    process = run_entry(root)
+                    text = combined(process)
+                    self.assertEqual(process.returncode, 2, text)
+                    self.assertIn(expected, text)
+                    self.assertNotIn("missing executable:", text)
+                    self.assertNotIn("Typecheck:", text)
+                    self.assertNotIn("Lint:", text)
+
+    def test_unselected_scb_check_needs_no_python_runtime(self) -> None:
+        # No advisory scb-check, no command, no runtime fact: TypeScript-only
+        # usage must not require any Python runtime declaration.
+        build_consumer(
+            self.root,
+            routing=routing_text(fact_lines='test_command = "bun test"\n'),
+        )
+        process = run_entry(self.root)
+        text = combined(process)
+        self.assertEqual(process.returncode, 0, text)
+        self.assertIn("Typecheck:", text)
+        self.assertIn("Lint:", text)
+        self.assertNotIn("scb_check_command", text)
 
     def test_missing_local_executable_reports_127(self) -> None:
         for missing_tool in ("biome", "tsc"):
@@ -995,9 +1143,19 @@ class TypeScriptPreloadGuardTests(NativeConsumerTestCase):
 
 class TypeScriptAssetContractTests(unittest.TestCase):
     def test_assets_declare_no_python_runtime_dependency(self) -> None:
-        for name in ("check.ts", "preload.ts", "tsconfig.json"):
+        for name in ("preload.ts", "tsconfig.json"):
             text = (ASSET_SOURCE / name).read_text(encoding="utf-8")
-            self.assertNotIn("python", text.lower(), f"{name} must not require a Python runtime")
+            self.assertNotIn(
+                "python", text.lower(), f"{name} must not require a Python runtime"
+            )
+        # check.ts validates advisory scb-check schema strings (fact.python_version,
+        # fact.scb_check_command) as opaque data without executing them; invoking
+        # or requiring a Python runtime stays forbidden.
+        text = (ASSET_SOURCE / "check.ts").read_text(encoding="utf-8")
+        self.assertNotRegex(
+            text, r"""["'`]python\d*["'`]""", "check.ts must not invoke a Python runtime"
+        )
+        self.assertNotIn("python -m", text)
 
     def test_entry_usage_names_package_bin_entrypoint(self) -> None:
         text = (ASSET_SOURCE / "check.ts").read_text(encoding="utf-8")

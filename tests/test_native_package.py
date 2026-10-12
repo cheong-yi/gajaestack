@@ -558,8 +558,77 @@ class InstalledPackageCheckTests(NativePackageTestCase):
             Path(selected["path"]),
             self.root / "node_modules/gajaestack/skills/native-quality/SKILL.md",
         )
+        # Candidates are catalog evidence, not prompt proof; diagnostics leak names.
+        installed_skill = (
+            self.root / "node_modules/gajaestack/skills/native-quality/SKILL.md"
+        )
+        self.assertIn(
+            selected["description"], installed_skill.read_text(encoding="utf-8")
+        )
         self.assertEqual(config.read_bytes(), before)
         self.assertEqual((existing / "keep.txt").read_text(), "existing consumer skill root")
+        # Name filters hide consumer collisions too; they are not path-selective.
+        collision = existing / "verify-change"
+        collision.mkdir()
+        collision.joinpath("SKILL.md").write_text(
+            "---\nname: verify-change\n"
+            "description: Consumer-owned collision with an ignored kit skill name.\n"
+            "---\nConsumer-owned collision body.\n"
+        )
+        config.write_text(before.decode().split("  ignoredSkills:")[0])
+        unfiltered = _run(
+            [GJC, "skills", "discover", "--source", "all", "--json"], self.root
+        )
+        self.assertEqual(unfiltered.returncode, 0, combined(unfiltered))
+        self.assertIn(
+            str(collision / "SKILL.md"),
+            {item["path"] for item in json.loads(unfiltered.stdout)["candidates"]},
+        )
+        config.write_bytes(before)
+        collided = _run(
+            [GJC, "skills", "discover", "--source", "all", "--json"],
+            self.root,
+        )
+        self.assertEqual(collided.returncode, 0, combined(collided))
+        collided_names = {
+            candidate["name"] for candidate in json.loads(collided.stdout)["candidates"]
+        }
+        self.assertNotIn("verify-change", collided_names)
+        self.assertEqual(
+            collided_names & {"consumer-guidance", "native-quality"},
+            {"consumer-guidance", "native-quality"},
+        )
+        shutil.rmtree(collision)
+        consumer_before = (consumer_skill / "SKILL.md").read_bytes()
+        with tempfile.TemporaryDirectory() as directory:
+            staging = stage_kit(Path(directory) / "source")
+            package = json.loads((staging / "package.json").read_text())
+            package["version"] = UPGRADE_VERSION
+            (staging / "package.json").write_text(json.dumps(package))
+            selected_source = staging / "skills/native-quality/SKILL.md"
+            selected_source.write_text(selected_source.read_text() + f"\n{SKILL_MARKER}\n")
+            upgraded = pack_kit(staging, Path(directory) / "dist")
+            installed = _run(
+                [BUN, "add", "--dev", "--exact", "--offline", "--ignore-scripts",
+                 "--backend=copyfile", f"{PACKAGE_NAME}@{upgraded}"],
+                self.root,
+            )
+            self.assertEqual(installed.returncode, 0, combined(installed))
+        self.assertIn(SKILL_MARKER, installed_skill.read_text())
+        reobserved = _run(
+            [GJC, "skills", "discover", "--source", "all", "--json"],
+            self.root,
+        )
+        self.assertEqual(reobserved.returncode, 0, combined(reobserved))
+        candidates = json.loads(reobserved.stdout)["candidates"]
+        self.assertEqual(
+            {Path(item["path"]) for item in candidates
+             if str(self.root / "node_modules/gajaestack/skills") in item["path"]},
+            {installed_skill},
+        )
+        self.assertIn(str(consumer_skill / "SKILL.md"), {c["path"] for c in candidates})
+        self.assertEqual((consumer_skill / "SKILL.md").read_bytes(), consumer_before)
+        self.assertEqual(config.read_bytes(), before)
 
     def test_native_check_and_preload_need_neither_python_nor_node(self) -> None:
         build_consumer(self.root, self.tarball, bunfig=True, sentinel=True)
@@ -817,6 +886,45 @@ class InstalledPackageCheckTests(NativePackageTestCase):
         self.assertRegex(combined(quick), r"timing: lint files=2 status=0 elapsed_ms=\d+")
         self.assertEqual(before, after, "checks must not write consumer files")
         self.assertFalse((self.root / "tsconfig.tsbuildinfo").exists())
+
+    def test_packed_guidance_exposes_scb_check_advisory_without_dependency_or_executable(
+        self,
+    ) -> None:
+        """Installed guidance exposes scb-check advisory semantics; nothing scb ships."""
+        build_consumer(self.root, self.tarball)
+        installed = self.root / "node_modules" / PACKAGE_NAME
+        # The same guidance resources the Python package ships expose the
+        # scb-check command and its advisory-only meaning.
+        for relative in ("python/routing/AGENTS.md", "skills/native-quality/SKILL.md"):
+            guidance = installed / relative
+            self.assertEqual(
+                guidance.read_bytes(), (KIT / relative).read_bytes(), relative
+            )
+            body = guidance.read_text(encoding="utf-8").lower()
+            self.assertIn("scb-check", body, relative)
+            self.assertIn("advisory", body, relative)
+            self.assertIn("scb_check_command", body, relative)
+        # Unselected by default: the kit adds no scb dependency, wrapper,
+        # or executable, and the default consumer check stays scb-free.
+        packed = manifest()
+        self.assertFalse(packed.get("dependencies"))
+        self.assertFalse(packed.get("optionalDependencies"))
+        self.assertFalse(any("scb" in name.lower() for name in packed.get("bin", {})))
+        self.assertFalse(
+            any("scb" in path.name.lower() for path in installed.rglob("*"))
+        )
+        self.assertFalse(
+            any(
+                "scb" in path.name.lower()
+                for path in (self.root / "node_modules" / ".bin").iterdir()
+            )
+        )
+        facts = (self.root / ".gajaestack" / "routing.toml").read_text(encoding="utf-8")
+        self.assertNotIn("scb", facts.lower())
+        checked = run_bin(self.root)
+        checked_text = combined(checked)
+        self.assertEqual(checked.returncode, 0, checked_text)
+        self.assertNotIn("scb", checked_text.lower())
 
 
 class InstalledPinnedUpgradeTests(NativePackageTestCase):

@@ -6,32 +6,11 @@ Start with [AGENTS.md](AGENTS.md), the agent entry point. The canonical design i
 
 ## Install: pinned local artifacts
 
-No registry publication is assumed and no command downloads anything: build each artifact from a gajaestack source checkout, then install that exact pinned file. Both packages are version `0.1.0`. Python-only consumption needs no Bun; TypeScript-only consumption needs no Python.
+Use the authoritative [native artifact recipe](docs/python-trial.md#install-from-local-artifacts-no-registry) for maintainer build-once, consumer installation, upgrades and rollback. One kit version (`0.1.0` currently) covers the Python wheel and Bun tarball. Record reviewed source commit, version and SHA-256; retain the exact artifacts at durable, version-specific immutable locations and reuse them across approved consumers. Hashes identify bytes, not trusted source. There is no registry, updater, ordinary-run network check or silent tracking of latest.
 
-```sh
-# Python: build the wheel (setuptools >= 77 must already be installed; the
-# flags below keep the build offline), then install the pinned wheel.
-python -m pip wheel --no-index --no-deps --no-build-isolation \
-  --wheel-dir /tmp/artifacts /path/to/gajaestack
-python -m pip install --no-index --no-deps --no-compile \
-  /tmp/artifacts/gajaestack-0.1.0-*.whl
+Python-only consumption needs no Bun; TypeScript-only consumption needs no Python unless the independent [scb-check advisory](#optional-advisory-scb-check) is selected. Packages add no dependencies, install scripts/hooks or pytest11 autoload; selected checks use consumer-provisioned tools. pip/Bun own installation, while facts, native wiring and host configuration remain consumer-owned and separately approved.
 
-# Upgrade/reinstall (example: 0.1.0 → 0.1.1): rebuild into a new directory —
-# never reuse the old artifact path — then force-reinstall that exact wheel.
-python -m pip wheel --no-index --no-deps --no-build-isolation \
-  --wheel-dir /tmp/artifacts-0.1.1 /path/to/reviewed-0.1.1-source
-python -m pip install --no-index --no-deps --no-compile --force-reinstall \
-  /tmp/artifacts-0.1.1/gajaestack-0.1.1-*.whl
-
-# TypeScript: pack the tarball from the source checkout, then add it as an
-# exact dev dependency with scripts disabled.
-bun pm pack --ignore-scripts --destination /tmp/artifacts
-bun add --dev --exact --offline gajaestack@/tmp/artifacts/gajaestack-0.1.0.tgz --ignore-scripts --backend=copyfile
-```
-
-Pin the wheel by SHA-256 in a reviewed requirements file using pip `--require-hashes`; the [guide](docs/python-trial.md) shows the native commands. Commit `package.json` and `bun.lock` through normal review; reproduce offline with `bun install --frozen-lockfile --offline --ignore-scripts --backend=copyfile`. Upgrade on either runtime with a **distinct** artifact path per version: pack reviewed new-version source and use `bun add --dev --exact --offline --ignore-scripts --backend=copyfile gajaestack@/absolute/new-artifact.tgz`, or install its new wheel. Keep the explicit package name when changing the tarball pin. Rebuilding unchanged `0.1.0` source does not create `0.1.1`. The packages install no dependencies and run no install scripts or hooks: the Bun checks invoke the consumer's own local `tsc`/`Biome` (installed only when separately authorized), and the Python distribution registers no pytest11 autoload — its plugins load only from your explicit `-p` selections.
-
-Deselect components by reviewing their facts and native bindings, preserving unrelated selections. Before removing the whole dependency, remove its explicit preload/plugins, optional config extension and host-directory entry; then use `bun remove --offline --ignore-scripts gajaestack` or `python -m pip uninstall gajaestack`. Native managers do not rewrite consumer policy: removing a still-bound dependency fails closed rather than silently dropping the guard.
+Use the reviewed [deselection and removal lifecycle](docs/python-trial.md#deselect-or-remove): retire applicable facts/native/host bindings, remove authoritative dependency pins, uninstall natively, and verify offline replay without disturbing unrelated selections. Uninstalling does not unload guidance already in a host session.
 
 ## Check and test
 
@@ -47,7 +26,7 @@ gajaestack-imports setuptools        # import discoverability only: no install, 
 
 The setuptools console entrypoint does not add `-B`: when bytecode writes into a consumer-local `.venv` must be avoided, run `PYTHONDONTWRITEBYTECODE=1 gajaestack-python-check ...` (or `python -B -m gajaestack.check_changed_python ...`). The pytest guard binding already requires `-B` or the environment equivalent, installs are documented with `--no-compile`, and no bare console startup is claimed never to write bytecode. The Python check itself runs Ruff with `--no-cache`.
 
-Quick is conservative when installed: from an installed package, quick covers the **full declared lint scope on every invocation** — installed shared code is ignored by the consumer's Git (including local edits and dependency upgrades) and no persistent baseline/cache exists to prove it unchanged — so budget a full lint pass per quick run. From a source checkout quick stays a changed-file lint intersection (staged, unstaged, untracked), expanding to the full declared scope when facts, Biome configuration, or the checker itself change; an empty intersection is **no coverage**, not a pass. Quick never typechecks in either mode.
+Quick is conservative when installed: both runtimes cover the **full declared lint scope on every invocation**, because ignored dependency code has no tracked baseline. Source behavior differs: TypeScript intersects changes with declared lint paths; ordinary Python source quick checks changed `.py` files, narrowed only by explicit `--path`, using bundled Ruff config unless `--config` is supplied. Policy changes can expand either to full declared scope; see [Python scope and command advice](docs/python-trial.md#python-quick-feedback-versus-completion). Empty quick scope is **no coverage**, not a pass; quick never typechecks.
 
 Installing the package activates nothing. Bind the guards yourself as a reviewed configuration change:
 
@@ -63,11 +42,15 @@ preload = ["./existing-preload.ts", "gajaestack/preload"]
 addopts = -q --strict-markers -p gajaestack.pytest_guard -p gajaestack.pytest_required_ruff -p no:cacheprovider
 ```
 
-A guard-only consumer selects just `-p gajaestack.pytest_guard`. Facts: write and review your own `.gajaestack/routing.toml` — no command creates or rewrites it — and treat the complete examples in the [guide](docs/python-trial.md) as starting points, not truth. Facts remain the single runtime authority (e.g. `selected_components = ["typescript", "typescript-guard"]` or `["guard", "ruff", "required-ruff"]`). Optional `[fact].completion_timeout_seconds` declares a project-owned outer budget for `test_command`, honoured by your launcher and not imposed by this kit — see the [budget contract](docs/python-trial.md#project-owned-outer-completion-budget). Demonstration is a valid pass plus a deliberately seeded rejection; native test failures, missing tools and empty selections stay failures.
+A guard-only consumer follows the [complete facts and plugin delta](docs/python-trial.md#guard-only-delta), not just plugin removal. Write and review consumer-owned `.gajaestack/routing.toml` using the [selection contracts](docs/python-trial.md#facts-selections); no command creates or rewrites it, and examples are starting points, not truth. Optional `[fact].completion_timeout_seconds` declares a project-owned outer budget for `test_command`, honoured by your launcher and not imposed by this kit — see the [budget contract](docs/python-trial.md#project-owned-outer-completion-budget). Demonstration is a valid pass plus a deliberately seeded rejection; native test failures, missing tools and empty selections stay failures.
+
+## Optional advisory: scb-check
+
+[scb-check](https://github.com/gabeorlanski/scb-check) `0.2.0` optionally supplements lint with advisory clone, structural, and complexity review. Select it independently in consumer facts and install its pinned upstream artifact separately; it adds no default dependency, copied rules, wrapper, mandatory gate, autorewrite, or score target. Existing completion checks stay unchanged. Selected use requires Python 3.12+ even for TypeScript; unselected TypeScript still needs no Python. The [recipe](docs/python-trial.md#optional-advisory-scb-check) specifies the source pin, exact command, native configuration, language limits, and incomplete-scan/error handling. Runtime and agent-judgment acceptance remain unverified.
 
 ## Skills (GJC)
 
-Skill guidance helps agents reason; it does not enforce behavior by itself. The skills ship inside both packages. Adding the package root alone exposes **all three skills' metadata**, even when only one body is invoked: that is not selective context loading. For GJC 0.18.7, the following native name-filter recipe selects `native-quality` for discovery without a global allowlist:
+Skill guidance helps agents reason; it does not enforce behavior by itself. The skills ship inside both packages. Adding the package root alone exposes all three skills' metadata. GJC 0.18.7 native name filters narrow discovery candidates without a global allowlist. Gajaestack acceptance uses ordinary skill selection and accepts the host limitation that diagnostics may expose excluded skill names and paths; complete model-context isolation is not an acceptance gate.
 
 ```yaml
 # .gjc/config.yml — merge into the existing config: preserve current
@@ -94,9 +77,11 @@ gjc skills discover --source all --json   # unfiltered; page with --offset if tr
 # In an approved consumer-scoped session, invoke /skill:native-quality.
 ```
 
-The configured entry must be the **parent root** containing the skill directories, not a direct skill leaf. Use Bun's native `--backend=copyfile` on install, upgrade and replay when selecting GJC guidance: GJC 0.18.7 rejects multiply linked skill files, including Bun's default cache hardlinks, with “Skill path is not a regular file.” This is native dependency installation, not manually re-copying shared source. No guidance symlink is needed; an existing `.gjc/skills` directory stays untouched. Filters match names globally, not package paths: inspect collisions before adding exclusions, and do not hide an unrelated consumer skill with the same name. Keep unrelated skills and existing filters intact; a conflicting policy needs a consumer-owned decision.
+The configured entry must be the **parent root** containing the skill directories, not a direct skill leaf. Use Bun's native `--backend=copyfile` on install, upgrade and replay when selecting GJC guidance: GJC 0.18.7 rejects multiply linked skill files, including Bun's default cache hardlinks, with “Skill path is not a regular file.” This is native dependency installation, not manually re-copying shared source. No guidance symlink is needed; an existing `.gjc/skills` directory stays untouched. Filters match names globally, not package paths: before adding an exclusion, check discovery for an unrelated consumer skill with the same name and flag any collision for a consumer-owned decision—never hide the consumer skill to fit this recipe. Keep unrelated skills and existing filters intact.
 
-Acceptance requires both unfiltered discovery (only selected kit metadata, unrelated skills preserved) **and actual session prompt-context evidence**, followed by loading the selected installed body. A queried catalog or a successful body invocation alone does not prove absence of unselected context. Selective prompt-context loading is not yet verified by this recipe; do not treat discovery filtering as completed host acceptance. Other hosts and unlisted loading paths remain unclaimed.
+For ordinary skill-selection acceptance, inspect unfiltered discovery: selected kit skills and unrelated skills must remain candidates, and excluded kit skills must not be candidates. Verify loading the selected installed body and repeat after a distinct pinned upgrade using the [native recipe](docs/python-trial.md#upgrade-and-rollback). Excluded names and paths in diagnostics do not block acceptance. This does not authorize loading or running excluded skills. Discovery listings, body invocations and agent assertions alone do not prove complete model-context isolation.
+
+Observed with installed Python and Bun packages on GJC 0.18.7: filtered `candidates` retain the selected kit skill and unrelated skills, but `diagnostics` still expose excluded names and installed `SKILL.md` paths. The owner accepted this diagnostic exposure as a host limitation, not a Gajaestack acceptance blocker. Complete model-visible prompt exclusion remains **unverified**; separate GJC isolation changes and captured isolation trials are outside this scope. No kit loader workaround or copied source is introduced. Other hosts and unlisted loading paths remain unclaimed. This host-specific acceptance exception qualifies issue #1's intended zero context cost for unselected components; the canonical issue records this exception as decision 1A.
 
 ## Routing guidance
 

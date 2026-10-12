@@ -25,6 +25,7 @@ discovery convenience.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 import tomllib
 from pathlib import Path
@@ -41,6 +42,7 @@ KNOWN_CHECKS = {
     "pytest",
     "ruff-check",
     "ruff-format",
+    "scb-check",
     "mypy",
     "mutation-testing",
     "profiling",
@@ -49,18 +51,36 @@ KNOWN_CHECKS = {
 FACT_SCHEMA_VERSION = 1
 KNOWN_COMPONENTS = (
     "guard", "hypothesis", "mypy", "routing", "ruff", "required-ruff",
-    "typescript", "typescript-guard", "typescript-config",
+    "scb-check", "typescript", "typescript-guard", "typescript-config",
 )
 BINDING_FIELD = "required_ruff_before_pytest"
 CORE_FACT_STRINGS = ("affected_test_command", "test_command")
 OPTIONAL_FACT_STRINGS = ("mypy_command",)
 RUFF_FACT_STRINGS = ("ruff_command", "ruff_format_command")
 COMPLETION_TIMEOUT_FIELD = "completion_timeout_seconds"
+SCB_CHECK = "scb-check"
+SCB_COMMAND_FIELD = "scb_check_command"
+SCB_MINIMUM_RUNTIME = (3, 12)
 COMPLETION_TIMEOUT_MAX = 9007199254740991
 FACT_CORE_ERROR = (
     "fact must state quick and full local commands, Python version, no CI jobs, "
     "and no PCD enforcement"
 )
+
+
+def _runtime_names_supported_python(value: object) -> bool:
+    """True for a bounded ASCII numeric version naming Python >= 3.12.
+
+    Each segment is at most nine ASCII digits (major.minor with one optional
+    patch segment), so int conversion stays far below Python's digit limit and
+    the equivalent JavaScript Number parse stays exact and finite.
+    """
+    if not isinstance(value, str):
+        return False
+    if re.fullmatch(r"[0-9]{1,9}\.[0-9]{1,9}(?:\.[0-9]{1,9})?", value) is None:
+        return False
+    major, minor = (int(part) for part in value.split(".")[:2])
+    return (major, minor) >= SCB_MINIMUM_RUNTIME
 
 
 def routing_policy_errors(root: Path) -> list[str]:
@@ -97,6 +117,12 @@ def routing_policy_file_errors(policy_file: Path) -> list[str]:
                         f"{policy_file}: {item!r} appears in both {owners[item]} and {category}"
                     )
                 owners[item] = category
+        for category in ("required", "on_demand"):
+            if SCB_CHECK in selections[category]:
+                errors.append(
+                    f"{policy_file}: check {SCB_CHECK!r} is advisory-only; "
+                    f"remove it from {category}"
+                )
 
     conditional = policy.get("conditional")
     expected_triggers = {
@@ -115,7 +141,10 @@ def routing_policy_file_errors(policy_file: Path) -> list[str]:
         )
 
     required_checks = set(selections.get("required", ()))
-    errors.extend(_fact_errors(policy_file, policy.get("fact"), required_checks))
+    advisory_checks = set(selections.get("advisory", ()))
+    errors.extend(
+        _fact_errors(policy_file, policy.get("fact"), required_checks, advisory_checks)
+    )
     for error in completion_budget_errors(policy):
         errors.append(f"{policy_file}: {error}")
     facts = policy.get("fact", {})
@@ -213,7 +242,12 @@ def _misplaced_completion_budget(
     return places
 
 
-def _fact_errors(policy_file: Path, facts: object, required_checks: set[str]) -> list[str]:
+def _fact_errors(
+    policy_file: Path,
+    facts: object,
+    required_checks: set[str],
+    advisory_checks: set[str],
+) -> list[str]:
     if not isinstance(facts, dict):
         return [f"{policy_file}: {FACT_CORE_ERROR}"]
     if "schema_version" not in facts:
@@ -274,6 +308,38 @@ def _fact_errors(policy_file: Path, facts: object, required_checks: set[str]) ->
     if components and components.intersection({"guard", "hypothesis", "mypy", "ruff"}):
         if not isinstance(facts.get("python_version"), str) or not facts["python_version"].strip():
             errors.append(f"{policy_file}: fact.python_version must name the Python runtime")
+
+    # scb-check is an advisory-only independent selection: validators read the
+    # declared command and runtime facts as schema data and never execute them.
+    scb_selected = components is not None and SCB_CHECK in components
+    scb_advisory = SCB_CHECK in advisory_checks
+    if scb_selected and not scb_advisory:
+        errors.append(
+            f"{policy_file}: fact.selected_components selects {SCB_CHECK!r} "
+            "but advisory omits it; scb-check is advisory-only"
+        )
+    elif scb_advisory and not scb_selected:
+        errors.append(
+            f"{policy_file}: advisory selects {SCB_CHECK!r} but "
+            "fact.selected_components omits it"
+        )
+    if scb_selected:
+        command = facts.get(SCB_COMMAND_FIELD)
+        if not isinstance(command, str) or not command.strip():
+            errors.append(
+                f"{policy_file}: fact.{SCB_COMMAND_FIELD} must be a non-empty "
+                "string while advisory check 'scb-check' is selected"
+            )
+        if not _runtime_names_supported_python(facts.get("python_version")):
+            errors.append(
+                f"{policy_file}: fact.python_version must name a numeric Python "
+                "runtime >= 3.12 while advisory check 'scb-check' is selected"
+            )
+    elif SCB_COMMAND_FIELD in facts:
+        errors.append(
+            f"{policy_file}: fact.{SCB_COMMAND_FIELD} must be removed while "
+            "advisory check 'scb-check' is not selected"
+        )
 
     ruff_selected = components is not None and "ruff" in components
     for field in sorted(RUFF_FACT_STRINGS):

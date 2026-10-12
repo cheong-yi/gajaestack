@@ -52,6 +52,158 @@ class RoutingValidationTests(unittest.TestCase):
             self.assertIn("cannot read routing policy TOML", errors[0])
 
 
+class ScbCheckRoutingTests(unittest.TestCase):
+    """scb-check is an advisory-only independent component/check selection."""
+
+    def validate(self, text: str) -> list[str]:
+        with tempfile.TemporaryDirectory() as directory:
+            policy = Path(directory) / "routing.toml"
+            policy.write_text(text, encoding="utf-8")
+            return routing.routing_policy_file_errors(policy)
+
+    def selected_policy(self) -> str:
+        text = FACTS_EXAMPLE.read_text(encoding="utf-8")
+        text = text.replace(
+            'advisory = ["ruff-format", "mypy"]',
+            'advisory = ["ruff-format", "mypy", "scb-check"]',
+        )
+        text = text.replace(
+            'selected_components = ["mypy", "routing", "ruff"]',
+            'selected_components = ["mypy", "routing", "ruff", "scb-check"]',
+        )
+        return text.replace(
+            'test_command = "python -m pytest"\n',
+            'test_command = "python -m pytest"\nscb_check_command = "scb run --native"\n',
+        )
+
+    def runtime_policy(self, version: str) -> str:
+        return self.selected_policy().replace(
+            'python_version = "3.12"', f'python_version = "{version}"'
+        )
+
+    def test_valid_independent_advisory_selection(self) -> None:
+        self.assertEqual(self.validate(self.selected_policy()), [])
+
+    def test_selected_requires_nonblank_command(self) -> None:
+        text = self.selected_policy().replace(
+            'scb_check_command = "scb run --native"\n', ""
+        )
+        errors = self.validate(text)
+        self.assertTrue(
+            any(
+                "fact.scb_check_command must be a non-empty string" in error
+                for error in errors
+            ),
+            errors,
+        )
+        for command in ("", "   "):
+            with self.subTest(command=command):
+                text = self.selected_policy().replace(
+                    'scb_check_command = "scb run --native"\n',
+                    f'scb_check_command = "{command}"\n',
+                )
+                errors = self.validate(text)
+                self.assertTrue(
+                    any(
+                        "fact.scb_check_command must be a non-empty string" in error
+                        for error in errors
+                    ),
+                    errors,
+                )
+
+    def test_scb_check_is_advisory_only_category(self) -> None:
+        for category in ("required", "on_demand"):
+            with self.subTest(category=category):
+                text = FACTS_EXAMPLE.read_text(encoding="utf-8").replace(
+                    f"{category} = [", f'{category} = ["scb-check", '
+                )
+                errors = self.validate(text)
+                self.assertTrue(
+                    any(
+                        "check 'scb-check' is advisory-only" in error
+                        and f"remove it from {category}" in error
+                        for error in errors
+                    ),
+                    errors,
+                )
+
+    def test_python_version_boundaries(self) -> None:
+        for version in ("3.12", "3.12.1", "3.13", "4.1"):
+            with self.subTest(version=version):
+                self.assertEqual(self.validate(self.runtime_policy(version)), [])
+        rejected = (
+            "3.11",
+            "3.9",
+            "latest",
+            "3.12rc1",
+            "3",
+            "3.12.1.5",
+            "9" * 20 + ".12",
+        )
+        for version in rejected:
+            with self.subTest(version=version):
+                errors = self.validate(self.runtime_policy(version))
+                self.assertTrue(
+                    any(
+                        "fact.python_version must name a numeric Python runtime >= 3.12"
+                        in error
+                        for error in errors
+                    ),
+                    errors,
+                )
+
+    def test_advisory_and_component_selection_must_agree(self) -> None:
+        text = self.selected_policy().replace(
+            'selected_components = ["mypy", "routing", "ruff", "scb-check"]',
+            'selected_components = ["mypy", "routing", "ruff"]',
+        )
+        errors = self.validate(text)
+        self.assertTrue(
+            any(
+                "advisory selects 'scb-check' but fact.selected_components omits it"
+                in error
+                for error in errors
+            ),
+            errors,
+        )
+        text = (
+            FACTS_EXAMPLE.read_text(encoding="utf-8")
+            .replace(
+                'selected_components = ["mypy", "routing", "ruff"]',
+                'selected_components = ["mypy", "routing", "ruff", "scb-check"]',
+            )
+            .replace(
+                'test_command = "python -m pytest"\n',
+                'test_command = "python -m pytest"\n'
+                'scb_check_command = "scb run --native"\n',
+            )
+        )
+        errors = self.validate(text)
+        self.assertTrue(
+            any(
+                "fact.selected_components selects 'scb-check' but advisory omits it"
+                in error
+                for error in errors
+            ),
+            errors,
+        )
+
+    def test_stale_command_rejected_and_deselection_restores_clean(self) -> None:
+        text = FACTS_EXAMPLE.read_text(encoding="utf-8").replace(
+            'test_command = "python -m pytest"\n',
+            'scb_check_command = "stale command"\ntest_command = "python -m pytest"\n',
+        )
+        errors = self.validate(text)
+        self.assertTrue(
+            any("fact.scb_check_command must be removed" in error for error in errors),
+            errors,
+        )
+        self.assertEqual(
+            self.validate(text.replace('scb_check_command = "stale command"\n', "")),
+            [],
+        )
+
+
 class RoutingResourceTests(unittest.TestCase):
     def test_guidance_resource_is_static_not_rendered(self) -> None:
         text = GUIDANCE.read_text(encoding="utf-8")

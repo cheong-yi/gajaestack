@@ -40,6 +40,37 @@ function completionBudget(fact: Record<string, unknown>): void {
 	if (typeof testCommand !== "string" || !testCommand.trim()) fail(`fact.${COMPLETION_TIMEOUT_KEY} requires a nonblank fact.test_command`);
 }
 
+function advisoryScbCheck(document: Record<string, unknown>, fact: Record<string, unknown>): void {
+	// Advisory-only independent selection: the declared command and runtime are
+	// validated as schema facts only; this checker never executes the command,
+	// and an unselected TypeScript consumer requires no runtime fact at all.
+	for (const category of ["required", "on_demand"] as const) {
+		const checks = Array.isArray(document[category]) ? document[category] : [];
+		if (checks.includes("scb-check")) fail(`scb-check is advisory-only; remove it from ${category}`);
+	}
+	const advisory = Array.isArray(document.advisory) ? document.advisory : [];
+	const components = Array.isArray(fact.selected_components) ? fact.selected_components : [];
+	const selected = components.includes("scb-check");
+	const declared = advisory.includes("scb-check");
+	if (selected && !declared) fail("fact.selected_components selects 'scb-check' but advisory omits it; scb-check is advisory-only");
+	if (declared && !selected) fail("advisory selects 'scb-check' but fact.selected_components omits it");
+	if (selected) {
+		const command = fact.scb_check_command;
+		if (typeof command !== "string" || !command.trim()) fail("fact.scb_check_command must be a nonblank string while advisory check 'scb-check' is selected");
+		const runtime = fact.python_version;
+		// Each segment is bounded to at most nine ASCII digits with one optional
+		// patch segment, so Number stays exact and finite before comparison.
+		const parts =
+			typeof runtime === "string" && /^[0-9]{1,9}\.[0-9]{1,9}(?:\.[0-9]{1,9})?$/.test(runtime) && runtime.trimEnd() === runtime
+				? runtime.split(".").map(Number)
+				: [];
+		const supported = parts.length >= 2 && (parts[0] > 3 || (parts[0] === 3 && parts[1] >= 12));
+		if (!supported) fail("fact.python_version must name a numeric Python runtime >= 3.12 while advisory check 'scb-check' is selected");
+	} else if ("scb_check_command" in fact) {
+		fail("fact.scb_check_command must be removed while advisory check 'scb-check' is not selected");
+	}
+}
+
 function localPath(value: unknown, label: string): string {
 	if (typeof value !== "string" || !value.trim() || isAbsolute(value)) fail(`${label} must be a repository-relative path`);
 	const path = resolve(root, value as string);
@@ -228,6 +259,7 @@ async function runChecks(quick: boolean, binding: boolean, timing: boolean): Pro
 		if (binding && !selected.includes("typescript-guard")) fail("Bun preload requires explicit typescript-guard selection");
 		if (completionTimeoutMisplaced(document, fact)) fail(`fact.${COMPLETION_TIMEOUT_KEY} is supported only as a direct [fact] key`);
 		completionBudget(fact);
+		advisoryScbCheck(document, fact);
 		const options = table(document.typescript, "typescript");
 		if (!options || options.schema_version !== 1 || typeof options.typecheck !== "boolean" || typeof options.lint !== "boolean") fail("[typescript] requires schema_version=1 and explicit typecheck/lint booleans");
 		if (binding && !options.typecheck && !options.lint) fail("required Bun preload has no selected checks");

@@ -16,6 +16,14 @@ schema_version = 1
 # Facts never install assets or edit native configuration. Binding plugins
 # validate explicit selections when loaded by the consumer's native configuration.
 selected_components = ["mypy", "routing", "ruff"]
+# scb-check (optional upstream advisory) is unselected in this example. To
+# select: top-level advisory must include "scb-check" AND selected_components
+# must repeat it (never required/on_demand; both lists must agree), plus a
+# nonblank scb_check_command with the exact command (e.g. "scb-check check
+# src") and a python_version naming a numeric runtime >= 3.12 — even in a
+# TypeScript-only consumer. Unselected, omit scb_check_command: a stale command
+# is rejected. Upstream rule settings live only in scb-check.toml or
+# [tool.scb-check] in pyproject.toml, never in this facts file.
 python_version = "3.12"
 test_command = "python -m pytest"
 # Optional fact.completion_timeout_seconds: project-owned outer seconds for
