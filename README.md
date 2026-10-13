@@ -116,4 +116,6 @@ Consumer-owned `.gajaestack/routing.toml` remains the single facts authority; no
 
 - [gdp-ts](https://github.com/rauchg/gdp-ts) — TypeScript library, lint presets and agent guidance for APIs that require evidence of an authorization check tied to the specific caller/resource. Consider for sensitive TypeScript boundaries where callers can omit or mix up checks; not a Python RERG dependency or an adopted component. Trusted check implementations still need tests, linting discourages proof forgery, and transactions or runtime constraints remain necessary where permissions can become stale.
 
-The type-design and runtime-verification guidance draws on Lauren/Poteto's [pstack](https://github.com/cursor/plugins/tree/main/pstack), expressed in original wording. MIT is the intended project license; a license file is not yet installed or legally verified.
+## License
+
+Original Gajaestack contributions are licensed under [MIT](LICENSE), copyright Cheong Yi. The type-design and runtime-verification guidance draws on Lauren/Poteto's [pstack](https://github.com/cursor/plugins/tree/main/pstack); its full MIT notice and pinned source references are retained in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). Both notices ship in the Python and TypeScript distributions and must accompany redistributed material as applicable. This records the owner's license grant and known upstream notice, not a legal opinion or proof of third-party ownership.

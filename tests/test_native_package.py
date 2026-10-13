@@ -95,6 +95,8 @@ EXPECTED_FILES = {
     "docs/python-trial.md",
     "docs/scope-invariant.md",
     "AGENTS.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES",
 }
 EXPECTED_MEMBERS = {
     "package/package.json",
@@ -109,6 +111,8 @@ EXPECTED_MEMBERS = {
     "package/typescript/check.ts",
     "package/typescript/preload.ts",
     "package/typescript/tsconfig.json",
+    "package/LICENSE",
+    "package/THIRD_PARTY_NOTICES",
 }
 # Caches, private agent state, evidence trees and Python implementation are
 # never shipped into the Bun package; static guidance under python/ is allowed.
@@ -382,6 +386,7 @@ class PackageManifestContractTests(unittest.TestCase):
         self.assertEqual(package["type"], "module")
         self.assertEqual(package["exports"], EXPECTED_EXPORTS)
         self.assertEqual(package["bin"], EXPECTED_BIN)
+        self.assertEqual(package["license"], "MIT")
 
     def test_files_allowlist_ships_assets_and_static_guidance_only(self) -> None:
         files = manifest()["files"]
@@ -497,6 +502,7 @@ class PackageArchiveInventoryTests(NativePackageTestCase):
         self.assertEqual(packed["exports"], EXPECTED_EXPORTS)
         self.assertEqual(packed["bin"], EXPECTED_BIN)
         self.assertEqual(set(packed["files"]), EXPECTED_FILES)
+        self.assertEqual(packed["license"], "MIT")
 
 
 class InstalledPackageCheckTests(NativePackageTestCase):

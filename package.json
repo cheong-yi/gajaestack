@@ -2,6 +2,7 @@
   "name": "gajaestack",
   "version": "0.1.0",
   "description": "Selective consumer-rooted native quality checks and agent guidance",
+  "license": "MIT",
   "type": "module",
   "exports": {
     "./check": "./typescript/check.ts",
@@ -19,7 +20,9 @@
     "python/routing/AGENTS.md",
     "docs/python-trial.md",
     "docs/scope-invariant.md",
-    "AGENTS.md"
+    "AGENTS.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES"
   ],
   "engines": {
     "bun": ">=1.4.2"

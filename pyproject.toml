@@ -7,8 +7,9 @@ name = "gajaestack"
 description = "Selective consumer-rooted native quality checks and agent guidance"
 readme = "README.md"
 requires-python = ">=3.11"
-# No runtime dependencies: consumers bring their own pytest and Ruff, and no
-# license is claimed until licensing is legally established.
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES"]
+# No runtime dependencies: consumers bring their own pytest and Ruff.
 dynamic = ["version"]
 
 [project.scripts]

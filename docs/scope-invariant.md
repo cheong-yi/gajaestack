@@ -31,7 +31,7 @@ Gajaestack declares download requirements; network policy remains with the consu
 
 ## Intended choices and open work
 
-The intended license is MIT; it is not yet installed as a license file or legally verified. Retain required notices for copied or substantially adapted upstream material, including attribution and applicable notices for Lauren/Poteto's original `cursor/plugins/pstack`.
+Original project contributions are licensed under [MIT](../LICENSE). [Third-party notices](../THIRD_PARTY_NOTICES) retain Lauren/Poteto's original `cursor/plugins/pstack` MIT notice and pinned source references. Both files ship in the native distributions; retain applicable notices when redistributing. This local license installation implements the owner's approval without claiming legal verification or ownership of third-party material.
 
 Initial languages are Python and TypeScript; a third language waits for a concrete consumer. RERG is the intended Python pilot, followed by validating transfer to gajaeway for TypeScript. These choices do not establish that either pilot or all intended agent environments are supported. Portable content alone does not establish support for other hosts.
 

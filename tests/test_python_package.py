@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from email.parser import Parser
 import hashlib
 import json
 import os
@@ -16,6 +17,8 @@ PYTHON = os.environ.get("GAJAESTACK_PYTHON")
 WHEELHOUSE = os.environ.get("GAJAESTACK_PYTHON_WHEELHOUSE")
 GJC = os.environ.get("GAJAESTACK_GJC")
 
+LICENSE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES")
+
 
 @unittest.skipUnless(PYTHON and WHEELHOUSE, "set GAJAESTACK_PYTHON and GAJAESTACK_PYTHON_WHEELHOUSE for offline package acceptance")
 class PythonPackageTests(unittest.TestCase):
@@ -28,7 +31,7 @@ class PythonPackageTests(unittest.TestCase):
         cls.dist.mkdir()
         cls.stage = cls.base / "source"
         cls.stage.mkdir()
-        for name in ("pyproject.toml", "README.md", "AGENTS.md", "package.json", "MANIFEST.in"):
+        for name in ("pyproject.toml", "README.md", "AGENTS.md", "package.json", "MANIFEST.in", "LICENSE", "THIRD_PARTY_NOTICES"):
             if (KIT / name).exists():
                 shutil.copyfile(KIT / name, cls.stage / name)
         for name in ("python", "skills", "docs"):
@@ -52,16 +55,44 @@ class PythonPackageTests(unittest.TestCase):
     def test_inventory_native_entrypoints_and_version(self):
         with tarfile.open(self.sdist) as archive:
             source_names = archive.getnames()
+            metadata_name = next(name for name in source_names if name.count("/") == 1 and name.endswith("/PKG-INFO"))
+            source_metadata = Parser().parsestr(archive.extractfile(metadata_name).read().decode())
+            source_root = metadata_name.rsplit("/", 1)[0]
+            self.assertCountEqual(
+                [name for name in source_names if Path(name).name in LICENSE_FILES],
+                [f"{source_root}/{name}" for name in LICENSE_FILES],
+            )
+            sdist_licenses = {
+                name: archive.extractfile(f"{source_root}/{name}").read()
+                for name in LICENSE_FILES
+            }
         with zipfile.ZipFile(self.wheel) as archive:
             names = archive.namelist()
             metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
             metadata = archive.read(metadata_name).decode()
+            wheel_metadata = Parser().parsestr(metadata)
+            license_root = metadata_name.rsplit("/", 1)[0] + "/licenses"
+            self.assertCountEqual(
+                [name for name in names if Path(name).name in LICENSE_FILES],
+                [f"{license_root}/{name}" for name in LICENSE_FILES],
+            )
             entrypoints = archive.read(next(name for name in names if name.endswith(".dist-info/entry_points.txt"))).decode()
+            wheel_licenses = {
+                name: archive.read(f"{license_root}/{name}")
+                for name in LICENSE_FILES
+            }
             self.assertNotIn("Requires-Dist:", metadata)
             self.assertNotIn("pytest11", entrypoints)
             for command in ("gajaestack-python-check", "gajaestack-imports", "gajaestack-routing"):
                 self.assertIn(command, entrypoints)
             self.assertIn("Version: " + json.loads((KIT / "package.json").read_text())["version"], metadata)
+        for parsed_metadata in (source_metadata, wheel_metadata):
+            self.assertEqual(parsed_metadata.get_all("License-Expression"), ["MIT"])
+            self.assertCountEqual(parsed_metadata.get_all("License-File", []), LICENSE_FILES)
+        for licenses in (sdist_licenses, wheel_licenses):
+            self.assertEqual(set(licenses), set(LICENSE_FILES))
+            for name in LICENSE_FILES:
+                self.assertEqual(licenses[name], (KIT / name).read_bytes(), name)
         for name in source_names + names:
             for forbidden in ("__pycache__", ".pyc", ".private", "node_modules", ".gjc/", "ownership.json"):
                 self.assertNotIn(forbidden, name)
