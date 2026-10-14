@@ -14,6 +14,7 @@ from python.check_changed_python import (
     DEFAULT_CONFIG,
     MISSING_EXECUTABLE,
     ScopeError,
+    changed_paths,
     changed_python_files,
     full_scope,
     main,
@@ -32,6 +33,71 @@ def in_directory(path: Path) -> Iterator[Path]:
 
 
 class CheckChangedPythonTests(unittest.TestCase):
+    def test_renamed_policy_origins_invalidate_source_quick_scope(self) -> None:
+        for origin in (".gajaestack/routing.toml", "ruff.toml", "policy.txt"):
+            with (
+                self.subTest(origin=origin),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                root = Path(directory)
+                self.make_repo(
+                    root,
+                    {
+                        "base.py": "value = 1\n",
+                        "ruff.toml": "\n",
+                        "policy.txt": "policy\n",
+                        ".gajaestack/routing.toml": (
+                            "[python]\nschema_version = 1\n"
+                            'ruff_paths = ["base.py"]\nruff_config = "ruff.toml"\n'
+                        ),
+                    },
+                )
+                self.git(root, "mv", origin, "renamed.txt")
+                output, error = io.StringIO(), io.StringIO()
+                with self.fake_ruff() as commands, in_directory(root):
+                    with (
+                        contextlib.redirect_stdout(output),
+                        contextlib.redirect_stderr(error),
+                    ):
+                        result = main(
+                            ["--config", "ruff.toml", "--impact", "policy.txt"]
+                        )
+                self.assertIn("Quick scope expanded", output.getvalue())
+                self.assertIn(origin, output.getvalue())
+                self.assertNotIn("No coverage", output.getvalue())
+                if origin == "policy.txt":
+                    self.assertEqual(result, 0, error.getvalue())
+                    self.assertEqual(commands[0][-1], "base.py")
+                else:
+                    self.assertEqual(result, 2, error.getvalue())
+                    self.assertEqual(commands, [])
+
+    def test_rename_and_copy_origins_are_triggers_not_lint_targets(self) -> None:
+        for code in (b"R ", b"C "):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                self.write_files(
+                    root, {"origin.py": "old = 1\n", "destination.py": "new = 1\n"}
+                )
+                status = code + b" destination.py\0origin.py\0"
+                with mock.patch(
+                    "python.check_changed_python.git_output", return_value=status
+                ):
+                    self.assertEqual(
+                        changed_paths(root), (["destination.py"], ["origin.py"])
+                    )
+                    self.assertEqual(changed_python_files(root), ["destination.py"])
+                    with mock.patch(
+                        "python.check_changed_python.repository_root", return_value=root
+                    ):
+                        with self.fake_ruff() as commands, in_directory(root):
+                            with contextlib.redirect_stdout(io.StringIO()):
+                                result = main([])
+                    self.assertEqual(result, 0)
+                    self.assertEqual(
+                        commands[0][commands[0].index("--") + 1 :], ["destination.py"]
+                    )
+
     def git(self, root: Path, *args: str) -> None:
         subprocess.run(
             ["git", "-C", str(root), *args],
@@ -211,18 +277,24 @@ class CheckChangedPythonTests(unittest.TestCase):
                         result = main([])
 
             self.assertEqual(result, 0)
-            self.assertIn("No changed Python files; nothing to check.", output.getvalue())
+            self.assertIn(
+                "No changed Python files; nothing to check.", output.getvalue()
+            )
 
     def test_allowlist_with_no_changed_targets_reports_noop(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            self.make_repo(root, {"changed.py": "value = 1\n", "other.py": "other = 1\n"})
+            self.make_repo(
+                root, {"changed.py": "value = 1\n", "other.py": "other = 1\n"}
+            )
             self.write_files(root, {"changed.py": "value = 2\n"})
 
             def must_not_run(
                 command: list[str], **kwargs: object
             ) -> subprocess.CompletedProcess[str]:
-                raise AssertionError("ruff must not run without matching changed targets")
+                raise AssertionError(
+                    "ruff must not run without matching changed targets"
+                )
 
             with self.fake_ruff(must_not_run):
                 with in_directory(root):
@@ -318,7 +390,19 @@ class CheckChangedPythonTests(unittest.TestCase):
             self.assertEqual(result, 0)
             self.assertEqual(
                 commands,
-                [["ruff", "check", "--no-cache", "--no-fix", "--no-fix-only", "--config", "configs/ruff.toml", "--", "base.py"]],
+                [
+                    [
+                        "ruff",
+                        "check",
+                        "--no-cache",
+                        "--no-fix",
+                        "--no-fix-only",
+                        "--config",
+                        "configs/ruff.toml",
+                        "--",
+                        "base.py",
+                    ]
+                ],
             )
 
     def test_cli_limits_ruff_to_changed_requested_paths(self) -> None:
@@ -510,19 +594,26 @@ class CheckChangedPythonTests(unittest.TestCase):
 
     def test_completion_budget_does_not_change_native_ruff_status(self) -> None:
         for budget in (None, "1", "600", "9007199254740991"):
-            with self.subTest(budget=budget), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(budget=budget),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
                 fact = '[fact]\ntest_command = "python -B -m pytest"\n'
                 if budget is not None:
                     fact += f"completion_timeout_seconds = {budget}\n"
-                self.write_files(root, {
-                    "base.py": "base = 1\n",
-                    "ruff.toml": "\n",
-                    ".gajaestack/routing.toml": fact + (
-                        "[python]\nschema_version = 1\n"
-                        'ruff_paths = ["base.py"]\nruff_config = "ruff.toml"\n'
-                    ),
-                })
+                self.write_files(
+                    root,
+                    {
+                        "base.py": "base = 1\n",
+                        "ruff.toml": "\n",
+                        ".gajaestack/routing.toml": fact
+                        + (
+                            "[python]\nschema_version = 1\n"
+                            'ruff_paths = ["base.py"]\nruff_config = "ruff.toml"\n'
+                        ),
+                    },
+                )
 
                 def native_failure(command, **kwargs):
                     self.assertNotIn("timeout", kwargs)
@@ -537,19 +628,34 @@ class CheckChangedPythonTests(unittest.TestCase):
 
     def test_invalid_completion_budget_stops_before_ruff(self) -> None:
         for budget in (
-            "true", "false", "0", "-1", '"600"', "1.5", "1.0",
-            "inf", "nan", "9007199254740992", "18446744073709551616",
+            "true",
+            "false",
+            "0",
+            "-1",
+            '"600"',
+            "1.5",
+            "1.0",
+            "inf",
+            "nan",
+            "9007199254740992",
+            "18446744073709551616",
         ):
-            with self.subTest(budget=budget), tempfile.TemporaryDirectory() as directory:
+            with (
+                self.subTest(budget=budget),
+                tempfile.TemporaryDirectory() as directory,
+            ):
                 root = Path(directory)
-                self.write_files(root, {
-                    ".gajaestack/routing.toml": (
-                        '[fact]\ntest_command = "python -B -m pytest"\n'
-                        f"completion_timeout_seconds = {budget}\n"
-                        "[python]\nschema_version = 1\n"
-                        'ruff_paths = ["missing.py"]\nruff_config = "missing.toml"\n'
-                    ),
-                })
+                self.write_files(
+                    root,
+                    {
+                        ".gajaestack/routing.toml": (
+                            '[fact]\ntest_command = "python -B -m pytest"\n'
+                            f"completion_timeout_seconds = {budget}\n"
+                            "[python]\nschema_version = 1\n"
+                            'ruff_paths = ["missing.py"]\nruff_config = "missing.toml"\n'
+                        ),
+                    },
+                )
                 error = io.StringIO()
                 with self.fake_ruff() as commands, in_directory(root):
                     with contextlib.redirect_stderr(error):

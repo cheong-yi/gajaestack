@@ -12,6 +12,15 @@ Usage in a consumer checkout with the installed ``gajaestack`` package::
     gajaestack-python-check --full [--config PATH] \
         [--facts PATH] [--timing]
 
+    # contributor lint: explicit contribution target, or deliberate baseline
+    gajaestack-python-check --reference-branch TARGET
+    gajaestack-python-check --baseline-commit COMMIT
+
+Contributor selectors are mutually exclusive and cannot accompany ``--full``.
+They intersect current net changes since the merge base (or explicit commit)
+with consumer-declared scope, including local work. Native exclusions apply.
+They never infer a target, fetch history, or replace full completion checks.
+
 A source copy (a repository checkout or a consumer-copied helper) accepts the
 same arguments when invoked directly as a script.
 
@@ -28,7 +37,7 @@ Quick mode expands to the full selected scope whenever a shared policy path
 changed: the selected ``--config`` file, this helper script itself (when it
 lives inside the repository), or any repeated ``--impact`` path (shared
 policy paths such as routing facts or AGENTS guidance), and always when the
-helper runs as the installed shared package: installed code and data can
+helper runs as the installed shared package without a contributor selector: installed code and data can
 change locally with no tracked baseline, so every installed quick invocation
 conservatively covers the full selected scope and prints the stdout reason
 ``installed shared package (no tracked code baseline)``. Expansion loads the
@@ -70,6 +79,7 @@ Exit status:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -92,6 +102,7 @@ def installed_shared_package() -> bool:
     parts = Path(__file__).resolve().parts
     return "site-packages" in parts or "dist-packages" in parts
 
+
 class GitError(RuntimeError):
     """Git could not report the changed files."""
 
@@ -106,7 +117,9 @@ class ScopeError(RuntimeError):
 
 def git_output(*args: str, cwd: Path | None = None) -> bytes:
     try:
-        completed = subprocess.run(["git", "--no-optional-locks", *args], cwd=cwd, capture_output=True)
+        completed = subprocess.run(
+            ["git", "--no-optional-locks", *args], cwd=cwd, capture_output=True
+        )
     except FileNotFoundError:
         raise GitError("git executable not found", MISSING_EXECUTABLE) from None
     if completed.returncode != 0:
@@ -122,11 +135,12 @@ def repository_root() -> Path:
     return Path(os.fsdecode(output))
 
 
-def changed_paths(root: Path) -> list[str]:
-    """Return repository-relative paths from NUL-terminated porcelain status."""
+def changed_paths(root: Path) -> tuple[list[str], list[str]]:
+    """Return current paths and rename/copy origins from porcelain status."""
     status = git_output("status", "--porcelain", "-z", "--untracked-files=all", cwd=root)
     entries = status.split(b"\0")
     paths: list[str] = []
+    origins: list[str] = []
     index = 0
     while index < len(entries):
         entry = entries[index]
@@ -136,17 +150,194 @@ def changed_paths(root: Path) -> list[str]:
         code, path = entry[:2], os.fsdecode(entry[3:])
         paths.append(path)
         if b"R" in code or b"C" in code:
-            index += 1  # rename/copy entries are followed by the original path.
-    return paths
+            origins.append(os.fsdecode(entries[index]))
+            index += 1
+    return paths, origins
 
 
 def changed_python_files(root: Path) -> list[str]:
     """Return changed ``.py`` paths that still exist in the worktree."""
-    return [
-        path
-        for path in changed_paths(root)
-        if path.endswith(".py") and (root / path).is_file()
-    ]
+    paths, _ = changed_paths(root)
+    return [path for path in paths if path.endswith(".py") and (root / path).is_file()]
+
+
+def contributor_changes(root: Path, reference: str | None, baseline: str | None) -> list[Path]:
+    """Compare current worktree bytes to one explicit commit, never a push log."""
+    if git_output("rev-parse", "--is-shallow-repository", cwd=root).strip() != b"false":
+        raise ScopeError("contributor scope requires non-shallow Git history")
+    value = reference if reference is not None else baseline
+    if not value or value.startswith("-"):
+        raise ScopeError("reference/baseline must be a nonempty Git revision, not an option")
+    resolved = subprocess.run(
+        [
+            "git",
+            "--no-optional-locks",
+            "-c",
+            "core.warnAmbiguousRefs=true",
+            "rev-parse",
+            "--verify",
+            "--end-of-options",
+            f"{value}^{{commit}}",
+        ],
+        cwd=root,
+        capture_output=True,
+    )
+    if resolved.returncode or resolved.stderr:
+        raise ScopeError(
+            f"cannot resolve unambiguous commit {value!r}: {os.fsdecode(resolved.stderr).strip()}"
+        )
+    commit = resolved.stdout.decode("ascii").strip()
+    base = commit
+    if reference is not None:
+        try:
+            bases = git_output("merge-base", "--all", commit, "HEAD", cwd=root).splitlines()
+        except GitError as error:
+            raise ScopeError(
+                f"cannot determine merge base (unrelated or unavailable history): {error}"
+            ) from error
+        if len(bases) != 1:
+            raise ScopeError("reference and HEAD must have exactly one merge base")
+        base = bases[0].decode("ascii")
+    print(
+        "Contributor baseline: "
+        + json.dumps(
+            {
+                "reference": reference,
+                "baseline_commit": baseline,
+                "resolved": commit,
+                "merge_base": base if reference is not None else None,
+                "baseline": base,
+            },
+            ensure_ascii=False,
+        )
+    )
+    # Disable rename detection: old and new names both appear, including policy
+    # files renamed out of scope. Diff compares the baseline directly to current
+    # bytes, so reverted commit/index changes are not replayed.
+    paths = git_output(
+        "diff",
+        "--no-relative",
+        "--no-ext-diff",
+        "--no-renames",
+        "--name-only",
+        "-z",
+        base,
+        "--",
+        cwd=root,
+    )
+    paths += git_output("ls-files", "--others", "--exclude-standard", "-z", cwd=root)
+    return list(dict.fromkeys(root / os.fsdecode(path) for path in paths.split(b"\0") if path))
+
+
+def contributor_check(args: argparse.Namespace, facts_path: Path, timing: bool) -> int:
+    started = time.perf_counter()
+    root = Path.cwd().resolve()
+    try:
+        git_root = repository_root()
+        changed = contributor_changes(git_root, args.reference_branch, args.baseline_commit)
+        ignored = {
+            git_root / os.fsdecode(path)
+            for path in git_output(
+                "ls-files", "--cached", "--ignored", "--exclude-standard", "-z", cwd=git_root
+            ).split(b"\0")
+            if path
+        }
+        eligible = {
+            git_root / os.fsdecode(path)
+            for path in git_output(
+                "ls-files", "--cached", "--others", "--exclude-standard", "-z", cwd=git_root
+            ).split(b"\0")
+            if path
+        } - ignored
+        files, config = _resolve_full_scope(
+            root, facts_path, args.config, candidates=eligible, deleted=changed
+        )
+        policy_names = {
+            "ruff.toml",
+            ".ruff.toml",
+            "pyproject.toml",
+            ".gitignore",
+            "uv.lock",
+            "poetry.lock",
+            "Pipfile",
+            "Pipfile.lock",
+            "setup.cfg",
+            "setup.py",
+        }
+        policies = {facts_path.resolve(), (root / config).resolve(), Path(__file__).resolve()}
+        # Follow native Ruff's local extend chain; unreadable dependencies fail
+        # conservatively rather than attempting to recreate Ruff's semantics.
+        config_path = (root / config).resolve()
+        seen: set[Path] = set()
+        uncertain = facts_path.resolve() not in eligible
+        while config_path not in seen:
+            seen.add(config_path)
+            policies.add(config_path)
+            if config_path not in eligible:
+                uncertain = True
+            try:
+                document = tomllib.loads(config_path.read_text())
+                settings = (
+                    document.get("tool", {}).get("ruff", {})
+                    if config_path.name == "pyproject.toml"
+                    else document
+                )
+                extend = settings.get("extend")
+                if extend is None:
+                    break
+                if not isinstance(extend, str):
+                    uncertain = True
+                    break
+                config_path = (config_path.parent / extend).resolve()
+            except (OSError, ValueError, AttributeError):
+                uncertain = True
+                break
+        reasons = [
+            os.path.relpath(path, root)
+            for path in changed
+            if path in policies
+            or path.name in policy_names
+            or path.name.startswith("requirements")
+            and path.suffix in {".txt", ".in"}
+            or any(path == root / item or (root / item) in path.parents for item in args.impact)
+        ]
+        if uncertain and changed:
+            reasons.append("unenumerable Ruff config dependencies")
+        changed_set = set(changed)
+        files = [
+            path
+            for path in files
+            if root / path in eligible
+            and (reasons or root / path in changed_set)
+            and (
+                reasons
+                or not args.path
+                or any(_matches([path], selector) for selector in args.path)
+            )
+        ]
+        if reasons:
+            print(
+                "Contributor scope expanded to full selected scope: "
+                + json.dumps(reasons, ensure_ascii=False)
+            )
+        print(
+            "Contributor lint paths (native Ruff exclusions apply): "
+            + json.dumps(files, ensure_ascii=False)
+        )
+        if timing:
+            report_timing("scope discovery", started, len(files), 0)
+        if not files:
+            print("No coverage; this no-op is not a lint pass.")
+            return 0
+        # Native excludes must also apply to explicitly passed paths. Leave the
+        # legacy full/quick entrypoints untouched.
+        return ruff_check(root, config, files, timing=timing, force_exclude=True)
+    except (GitError, ScopeError) as error:
+        code = error.code if isinstance(error, GitError) else INVALID_SCOPE
+        print(f"error: {error}", file=sys.stderr)
+        if timing:
+            report_timing("scope discovery", started, 0, code)
+        return code
 
 
 def timing_enabled() -> bool:
@@ -164,7 +355,12 @@ def report_timing(phase: str, started: float, files: int, status: int) -> None:
 
 
 def ruff_check(
-    root: Path, config: str, files: list[str], timing: bool | None = None
+    root: Path,
+    config: str,
+    files: list[str],
+    timing: bool | None = None,
+    *,
+    force_exclude: bool = False,
 ) -> int:
     if timing is None:
         timing = timing_enabled()
@@ -173,12 +369,43 @@ def ruff_check(
         print("error: empty Ruff scope; no coverage", file=sys.stderr)
         status = INVALID_SCOPE
     else:
-        command = ["ruff", "check", "--no-cache", "--no-fix", "--no-fix-only", "--config", config, "--", *files]
+        command = [
+            "ruff",
+            "check",
+            "--no-cache",
+            "--no-fix",
+            "--no-fix-only",
+            "--config",
+            config,
+            "--",
+            *files,
+        ]
         # Lint policy remains consumer-owned; check invocations must not inherit
         # native configuration or environment defaults that write files.
         environment = os.environ.copy()
         environment.pop("RUFF_OUTPUT_FILE", None)
         try:
+            if force_exclude:
+                command[2:2] = ["--force-exclude", "--respect-gitignore"]
+                discovery = subprocess.run(
+                    [*command[:2], "--show-files", *command[2:]],
+                    cwd=root,
+                    env=environment,
+                    capture_output=True,
+                )
+                if discovery.stderr:
+                    sys.stderr.write(os.fsdecode(discovery.stderr))
+                if discovery.returncode:
+                    if timing:
+                        report_timing("ruff", started, 0, discovery.returncode)
+                    return discovery.returncode
+                if not discovery.stdout.strip():
+                    print("No coverage; native Ruff exclusions select no files (not a lint pass).")
+                    if timing:
+                        report_timing("ruff", started, 0, 0)
+                    return 0
+                print("Native Ruff scope (absolute paths):")
+                print(os.fsdecode(discovery.stdout), end="")
             completed = subprocess.run(command, cwd=root, env=environment)
             status = completed.returncode
         except FileNotFoundError:
@@ -189,9 +416,7 @@ def ruff_check(
     return status
 
 
-def _misplaced_completion_budget(
-    node: object, path: tuple[str, ...]
-) -> list[tuple[str, ...]]:
+def _misplaced_completion_budget(node: object, path: tuple[str, ...]) -> list[tuple[str, ...]]:
     places: list[tuple[str, ...]] = []
     if isinstance(node, dict):
         for key, value in node.items():
@@ -271,7 +496,12 @@ def full_scope(
 
 
 def _resolve_full_scope(
-    root: Path, facts_path: Path, config_override: str | None = None
+    root: Path,
+    facts_path: Path,
+    config_override: str | None = None,
+    *,
+    candidates: set[Path] | None = None,
+    deleted: list[Path] | tuple[Path, ...] = (),
 ) -> tuple[list[str], str]:
     """Resolve the full selected scope declared in ``[python]`` of the facts.
 
@@ -286,9 +516,7 @@ def _resolve_full_scope(
     if not isinstance(python, dict):
         raise ScopeError(f"missing [python] table in {facts_path}")
     if type(python.get("schema_version")) is not int or python["schema_version"] != 1:
-        raise ScopeError(
-            f"unsupported [python].schema_version in {facts_path}: expected 1"
-        )
+        raise ScopeError(f"unsupported [python].schema_version in {facts_path}: expected 1")
 
     root_resolved = root.resolve()
     declared_root = python.get("root")
@@ -300,8 +528,7 @@ def _resolve_full_scope(
             expected = root / expected
         if expected.resolve() != root_resolved:
             raise ScopeError(
-                f"working directory {root_resolved} is not the declared root "
-                f"{expected.resolve()}"
+                f"working directory {root_resolved} is not the declared root {expected.resolve()}"
             )
 
     declared = python.get("ruff_paths")
@@ -310,13 +537,10 @@ def _resolve_full_scope(
             f"missing [python].ruff_paths in {facts_path}; full selected scope is empty"
         )
     if not declared:
-        raise ScopeError(
-            f"empty [python].ruff_paths in {facts_path}; full selected scope is empty"
-        )
+        raise ScopeError(f"empty [python].ruff_paths in {facts_path}; full selected scope is empty")
     if not all(isinstance(item, str) and item for item in declared):
         raise ScopeError(
-            f"[python].ruff_paths in {facts_path} must contain "
-            "repository-relative path strings"
+            f"[python].ruff_paths in {facts_path} must contain repository-relative path strings"
         )
 
     facts_config = python.get("ruff_config")
@@ -338,16 +562,25 @@ def _resolve_full_scope(
     for target in declared:
         target_path = Path(target)
         if target_path.is_absolute():
-            raise ScopeError(
-                f"declared ruff target must be repository-relative: {target}"
-            )
+            raise ScopeError(f"declared ruff target must be repository-relative: {target}")
         resolved = (root / target_path).resolve()
         if resolved != root_resolved and root_resolved not in resolved.parents:
             raise ScopeError(f"declared ruff target escapes the repository root: {target}")
         if not resolved.exists():
+            if candidates is not None and any(
+                path == resolved or resolved in path.parents for path in deleted
+            ):
+                continue
             raise ScopeError(f"declared ruff target does not exist: {target}")
         if resolved.is_dir():
-            for path in sorted(resolved.rglob("*.py")):
+            entries = (
+                resolved.rglob("*.py")
+                if candidates is None
+                else (
+                    path for path in candidates if path.suffix == ".py" and resolved in path.parents
+                )
+            )
+            for path in sorted(entries):
                 if not path.is_file():
                     continue
                 if not path.resolve().is_relative_to(root_resolved):
@@ -359,13 +592,12 @@ def _resolve_full_scope(
         else:
             if resolved.suffix != ".py":
                 raise ScopeError(f"declared Ruff target is not a Python file: {target}")
-            files.append(resolved.relative_to(root_resolved).as_posix())
+            if candidates is None or resolved in candidates:
+                files.append(resolved.relative_to(root_resolved).as_posix())
 
     unique = list(dict.fromkeys(files))
-    if not unique:
-        raise ScopeError(
-            "full selected scope is empty: no Python files under [python].ruff_paths"
-        )
+    if not unique and candidates is None:
+        raise ScopeError("full selected scope is empty: no Python files under [python].ruff_paths")
     return unique, config
 
 
@@ -374,9 +606,7 @@ def _matches(paths: list[str], selector: str) -> bool:
     selector = Path(selector).as_posix()
     if selector == ".":
         return bool(paths)
-    return any(
-        path == selector or path.startswith(selector + "/") for path in paths
-    )
+    return any(path == selector or path.startswith(selector + "/") for path in paths)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -417,6 +647,15 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="run the full selected scope declared in [python] of the facts file",
     )
+    baseline = parser.add_mutually_exclusive_group()
+    baseline.add_argument(
+        "--reference-branch",
+        help="lint current changes since this explicit target's merge base with HEAD",
+    )
+    baseline.add_argument(
+        "--baseline-commit",
+        help="lint current changes since this explicit commit instead of a merge base",
+    )
     parser.add_argument(
         "--timing",
         action="store_true",
@@ -431,6 +670,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.full and args.path:
         parser.error("--full selects the declared scope and cannot be combined with --path")
+    contributor = args.reference_branch is not None or args.baseline_commit is not None
+    if args.full and contributor:
+        parser.error("--full cannot be combined with contributor lint selectors")
     for selector in [*args.path, *args.impact]:
         if not selector or Path(selector).is_absolute() or ".." in Path(selector).parts:
             parser.error("selectors must be repository-relative paths without '..'")
@@ -438,12 +680,12 @@ def main(argv: list[str] | None = None) -> int:
     facts_path = Path(args.facts)
     if not facts_path.is_absolute():
         facts_path = Path.cwd() / facts_path
+    if contributor:
+        return contributor_check(args, facts_path, timing)
 
     if args.full:
         try:
-            files, config = full_scope(
-                Path.cwd(), facts_path, args.config, timing=timing
-            )
+            files, config = full_scope(Path.cwd(), facts_path, args.config, timing=timing)
         except ScopeError as error:
             print(f"error: {error}", file=sys.stderr)
             return INVALID_SCOPE
@@ -455,7 +697,7 @@ def main(argv: list[str] | None = None) -> int:
     discovery_started = time.perf_counter()
     try:
         root = repository_root()
-        changed = changed_paths(root)
+        changed, origins = changed_paths(root)
     except GitError as error:
         print(f"error: {error}", file=sys.stderr)
         if timing:
@@ -477,13 +719,11 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError:
         pass
     try:
-        triggers.add(
-            Path(__file__).resolve().relative_to(root.resolve()).as_posix()
-        )
+        triggers.add(Path(__file__).resolve().relative_to(root.resolve()).as_posix())
     except ValueError:
         pass  # The helper lives outside this repository; it cannot change here.
     matched = sorted(
-        trigger for trigger in triggers if trigger and _matches(changed, trigger)
+        trigger for trigger in triggers if trigger and _matches([*changed, *origins], trigger)
     )
     reasons = list(matched)
     installed = installed_shared_package()
@@ -501,25 +741,19 @@ def main(argv: list[str] | None = None) -> int:
         except ScopeError as error:
             print(f"error: {error}", file=sys.stderr)
             if timing:
-                report_timing(
-                    "scope discovery", discovery_started, 0, INVALID_SCOPE
-                )
+                report_timing("scope discovery", discovery_started, 0, INVALID_SCOPE)
             return INVALID_SCOPE
         if timing:
             report_timing("scope discovery", discovery_started, len(files), 0)
         print(f"Full selected scope: {len(files)} file(s) from {facts_path}")
         return ruff_check(scope_root, config, files, timing=timing)
 
-    files = [
-        path
-        for path in changed
-        if path.endswith(".py") and (root / path).is_file()
-    ]
+    files = [path for path in changed if path.endswith(".py") and (root / path).is_file()]
 
     if args.path:
-        files = [path for path in files if any(
-            _matches([path], selector) for selector in args.path
-        )]
+        files = [
+            path for path in files if any(_matches([path], selector) for selector in args.path)
+        ]
 
     if timing:
         report_timing("scope discovery", discovery_started, len(files), 0)

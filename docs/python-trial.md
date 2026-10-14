@@ -188,14 +188,14 @@ An outer command budget is separate from Bun's per-test `--timeout` in milliseco
 
 ## Python: quick feedback versus completion
 
-Provision the selected Python interpreter and (only when selected) Ruff through the consumer's existing environment. A Ruff-only selection needs no pytest: pytest is a prerequisite only when the selection activates the pytest integration (`guard`/`required-ruff`) or a run executes consumer pytest tests. The packaged Ruff example targets Python 3.12 E4/E7/E9/F correctness, not style. Choose consumer-specific paths explicitly in facts:
+Provision Python >=3.11 and (only when selected) Ruff through the consumer's existing environment. A Ruff-only selection needs no pytest: pytest is a prerequisite only when the selection activates the pytest integration (`guard`/`required-ruff`) or a run executes consumer pytest tests. The packaged Ruff example targets Python 3.12 E4/E7/E9/F correctness, not style. Choose consumer-specific paths explicitly in facts:
 
 ```sh
 gajaestack-python-check --full   # completion: full declared scope, independent of working-tree state
 gajaestack-python-check          # quick (no flag)
 ```
 
-Full mode reads `[python].ruff_paths` and `[python].ruff_config` from facts; `--path` cannot narrow it, while an explicit `--config` overrides the configuration. It refuses empty/missing/escaping targets and preserves native Ruff failures. **From an installed package, quick conservatively runs the full declared lint scope on every invocation**: ignored dependency code has no tracked baseline. Budget full lint cost; quick still needs Git and never replaces `--full`.
+Full mode reads `[python].ruff_paths` and `[python].ruff_config` from facts; `--path` cannot narrow it, while an explicit `--config` overrides the configuration. It refuses empty/missing/escaping targets and preserves native Ruff failures. **Without a contributor selector, installed quick conservatively runs the full declared lint scope**: ignored dependency code has no tracked baseline. Budget full lint cost for that unchanged default; quick still needs Git and never replaces `--full`. For the suggested contributor iteration command, see [contributor lint scope](#contributor-lint-scope).
 
 **Ordinary Python source quick mode is different:** it checks all existing staged, unstaged and untracked non-ignored changed `.py` files in the Git worktree, narrowed only by optional repeated `--path` arguments — not by facts `ruff_paths`. It uses the helper's adjacent `python/ruff.toml` unless `--config` is supplied; it does not ordinarily read facts. For source use with consumer policy, explicitly pass `--config /absolute/consumer/ruff.toml` and any intended repository-relative `--path` filters. Do not assume source quick inherits the full-mode config/scope.
 
@@ -210,6 +210,36 @@ The shared Ruff boundary forces `--no-cache --no-fix --no-fix-only` and ignores 
 `gajaestack-imports <importname>...` reports import discoverability only: it does not install packages, establish version compatibility, prove successful module initialization, or replace the selected check. Name only imports required by that check; build backends and parser plugins are independent prerequisites.
 
 When the explicit native pytest binding below is active, the configured native test launch (`python -B -m pytest`) is the completion command: the bound full Ruff check runs before collection, so chaining `gajaestack-python-check --full` first repeats completed lint work. Use `--full` as the completion check when no native test binding is adopted.
+
+### Contributor lint scope
+
+**Source versus release:** these selectors describe current checkout code, including uncommitted work; existing retained `0.1.0` artifacts are not claimed to contain it. Before consumer use, review and commit that implementation and use the [maintainer build recipe](#maintainer-build-once-and-retain) with an appropriately versioned reviewed commit. Do not overwrite retained releases or mistake an archive of HEAD for a build of dirty changes.
+
+The default **suggestion for contributor iteration**, not a changed command default, is an explicit contribution target:
+
+```sh
+gajaestack-python-check --reference-branch TARGET
+bun run gajaestack-check --quick --reference-branch TARGET
+# Deliberate alternative: use a specific baseline instead of a merge base.
+gajaestack-python-check --baseline-commit COMMIT
+bun run gajaestack-check --quick --baseline-commit COMMIT
+```
+
+Replace `TARGET` with the branch being contributed against. A configured tracking branch is not necessarily that target; neither checker guesses one, assumes `origin/main`, fetches, or tracks the last push. The selectors are mutually exclusive. `--reference-branch` resolves the reference to a commit and requires exactly one merge base with HEAD; `--baseline-commit` resolves the supplied commit directly. Unknown or ambiguous references, absent or multiple merge bases, shallow history and non-Git working directories fail explicitly instead of falling back to whole-tree lint.
+
+Selection is rooted at the consumer working directory and its declared lint paths/configuration, including when shared code is installed in ignored `site-packages` or `node_modules`. Git's NUL-delimited paths identify current net differences from the baseline plus non-ignored untracked files. Existing supported files are deduplicated and intersected with declared scope; deleted files are not linted, rename destinations are candidates and origins still participate in policy invalidation. Spaces and Unicode are supported. This checks whole current files, not historical contents or only changed lines. Native linter ignore/configuration rules remain authoritative.
+
+The checker reports the resolved reference/hash/baseline, actual lint selection, and any conservative policy-expansion reason. Configuration, facts and other tracked policy inputs can expand to full declared scope under the existing invalidation rules. Unlike legacy installed quick mode, merely living in an ignored dependency directory does not force this explicit contributor selection to full scope; it does not prove ignored installed package bytes unchanged. An empty selection is **no coverage**, never clean proof.
+
+Python selectors are lint-only and cannot accompany `--full`; full Python checks and selected type checks remain full. TypeScript selectors narrow only lint: without `--quick`, selected typechecking still covers the full tsconfig. Existing no-argument behavior, native test bindings and full completion commands are unchanged. Run the full completion boundary before claiming completion.
+
+### Contributor lint results
+
+- A nonempty lint run preserves the native linter's status and diagnostics. Errors fail; warnings follow native configuration and are not universally promoted to failures by this kit. Review them even on exit `0`; a successful lint invocation proves neither type safety nor behavioral correctness.
+- Missing selected tools, malformed facts/configuration, unusable references/history and subprocess failures are failures, not silent skips. A no-op may return before invoking a linter, so it does not prove that tool is available.
+- An empty quick/contributor intersection exits `0` with an explicit **no coverage** message, not a lint pass. Python contributor mode also reports no coverage when native Ruff exclusions select nothing. Biome unmatched-file failures are not hidden.
+- Invalid or empty full declared scope fails. Conservative policy expansion is a scope diagnostic, not itself a failure; read the resulting file selection and native result.
+- Quick lint never formats, typechecks or runs behavioral tests. Full TypeScript checking runs typechecking only when selected; full Python checking is Ruff lint. Existing CI and the consumer's declared completion command retain their independent responsibilities.
 
 ### Explicit native pytest binding
 
@@ -271,7 +301,7 @@ Optional `[python]` fields `root`, `source_root`, `prefix`, `base_prefix` declar
 
 Supported configured entry points are `python -B -m pytest`, a focused file/nodeid, and `--collect-only`. Initial prerequisite and explicitly bound full Ruff checks run before consumer conftest/test imports, not from a late fixture. Missing prerequisites or lint failures reject collection; subsequent native test failures remain failures. Approved imports can themselves have effects; the guard is not a sandbox.
 
-Observed isolated installed-package acceptance used **pytest 9.1.1** with Python 3.12, including native pass/rejection and package upgrade/removal checks. This is version-bounded evidence, not support for every pytest release or real-consumer adoption; `tests/test_python_package.py` is the reproducible acceptance entrypoint when its approved offline prerequisites are available.
+`tests/test_python_package.py` reproduces standalone installed-package acceptance, including native pass/rejection and package upgrade/removal checks, when its approved offline prerequisites are available. Its pytest invocations use **pytest 9.1.1** without activating the kit's prerequisite-guard or required-Ruff plugins; package inventory assertions do not prove those bindings. Installed pytest binding activation, pre-collection rejection and recovery still require separate acceptance evidence. This does not establish support for every pytest release or real-consumer adoption.
 
 Trusted startup includes Python site initialization, pytest itself and earlier plugins. Disabling/replacing configuration (`-c`, `-o addopts=`, `-p no:...`), injected/preloaded code, `pytest.main`, IDE adapters and different working directories are not an immutable admission boundary. Do not claim all plugin effects are prevented or unchecked merging impossible. Direct console-script startup and other pytest versions need separate evidence. No-bytecode launch and disabled cache prevent those checkout writes; arbitrary consumer tests/builds can still write. Use native external disposable temp/build directories and reviewed no-write assertions for any broader claim.
 
@@ -301,12 +331,14 @@ Here `mypy.ini` means the **consumer's** file, declaring its intended paths/runt
 
 Use the consumer's existing local `node_modules/.bin/tsc` and `node_modules/.bin/biome`. Bun invokes their actual JS launchers, so Node is not silently required. No `bunx` fallback or downloads occur. Existing native tsconfig/Biome configs remain authoritative; the packaged baseline is optional (`"extends": "gajaestack/tsconfig"` in the consumer tsconfig) and is never applied automatically. The `[typescript]` paths below resolve against the consumer's working directory.
 
-A complete, schema-valid TypeScript facts example (full file, not a fragment; template examples are starting points, not truth):
+### Minimal TypeScript lint selection
+
+For the README quick start, save this complete, schema-valid example as `.gajaestack/routing.toml` in the consumer root. It selects only standalone lint, not a preload, typechecking, tests or skills. Replace paths with existing consumer paths and `TARGET` in the recorded feedback command with the actual contribution target. These are declarations, not a command launcher; preserve unrelated facts when merging into an existing file.
 
 ```toml
-required = ["ts-test", "ts-typecheck", "ts-lint"]
+required = ["ts-lint"]
 advisory = []
-on_demand = ["mutation-testing", "profiling", "adversarial-review"]
+on_demand = []
 
 [conditional]
 input_parsing = "Changed parsing of externally supplied values: exercise valid, malformed, and boundary inputs."
@@ -316,22 +348,27 @@ external_commands = "Changed subprocess or executable invocation: test arguments
 
 [fact]
 schema_version = 1
-selected_components = ["typescript", "typescript-guard"]
-test_command = "bun test"
-affected_test_command = "bun run gajaestack-check --quick"
+selected_components = ["typescript"]
+test_command = "bun run gajaestack-check"
+affected_test_command = "bun run gajaestack-check --quick --reference-branch TARGET"
 ci_jobs_added = false
 pcd_is_enforcement = false
 
 [typescript]
 schema_version = 1
-typecheck = true
+typecheck = false
 lint = true
-tsconfig = "tsconfig.json"
 biome_config = "biome.json"
 paths = ["src"]
 ```
 
-Required preload checks must also appear in `required` as `ts-typecheck` and/or `ts-lint`, as shown. Quick and completion commands:
+Here the schema's `test_command` names completion of the selected lint boundary, not behavioral test execution. Preserve the consumer's existing broader completion command when applicable. Track facts, manifest/lock and consumer configuration in Git; ignore installed dependency directories. The native checker does not write these files. Bun >= 1.4.2 and an existing local Biome installation/configuration are required; no Python, `tsc`, test preload or optional packaged tsconfig baseline is needed for this selection.
+
+For separately approved typechecking, set `typecheck = true`, add `tsconfig = "tsconfig.json"` pointing to the existing consumer config and add `ts-typecheck` to `required`; local `node_modules/.bin/tsc` must already exist. For a test preload, additionally select `typescript-guard`, declare `test_command = "bun test"` and include `ts-test` in `required`, then merge the native binding below. Required preload checks must appear in `required` as `ts-typecheck` and/or `ts-lint`, matching the enabled booleans. Neither selection installs tools or edits native configuration.
+
+### TypeScript modes and optional test binding
+
+Quick and completion commands:
 
 ```sh
 bun run gajaestack-check --quick  # quick: changed-file lint intersection from a source checkout,
@@ -343,9 +380,9 @@ bun test                          # configured native test boundary
 
 For a bound consumer, `bun test` is the completion command: do not chain the standalone check first, which would repeat type/lint checks in the preload. Use the standalone completion check when no native test binding is adopted.
 
-Quick mode is a changed-file lint intersection: existing staged, unstaged, and untracked files intersected with the declared lint paths, and it never typechecks. Changes to the facts, the Biome configuration, or the checker itself expand a quick run to the full declared lint scope, so quick feedback cannot hide a policy-wide regression. **From an installed package, quick conservatively covers the full declared lint scope on every invocation**: installed shared code is ignored by consumer Git — including locally modified bytes and dependency upgrades — and without a written baseline/cache it cannot be proven unchanged; budget a full lint pass per quick run. An empty intersection is **no coverage**, not a lint pass. The checker accepts `--timing` / `GAJAESTACK_TIMING=1`: phase elapsed time, counts, and exit status on stderr, informational only (the preload passes no arguments, so the environment form is the one that works under the native binding).
+Without a contributor selector, source quick mode intersects existing staged, unstaged, and untracked files with declared lint paths, and never typechecks. Changes to facts, Biome configuration, or the checker expand a quick run to full declared lint scope. **Without a contributor selector, installed quick conservatively covers the full declared lint scope**: ignored shared code cannot be proven unchanged without a stored baseline. Budget a full lint pass for that unchanged default; use the explicit [contributor lint scope](#contributor-lint-scope) for suggested iteration feedback. An empty intersection is **no coverage**, not a lint pass. The checker accepts `--timing` / `GAJAESTACK_TIMING=1`: phase elapsed time, counts, and exit status on stderr, informational only (the preload passes no arguments, so use the environment form under the native binding).
 
-Quick discovery requires Git and fails visibly if changes cannot be read, including filenames that cannot be decoded as UTF-8; completion does not require Git. Rename origins participate in policy invalidation, while deleted files are not lint targets. Nested `biome.json`/`biome.jsonc` changes and tracked local `extends`/plugin dependencies invalidate the selection. Config dependencies that cannot be enumerated conservatively (including commented JSONC or package references) expand any changed working tree to full declared lint scope rather than guessing native config semantics.
+Quick and contributor discovery require Git and fail visibly if changes cannot be read, including filenames that cannot be decoded as UTF-8; completion without a contributor selector does not require Git. Rename origins participate in policy invalidation, while deleted files are not lint targets. Nested `biome.json`/`biome.jsonc` changes and tracked local `extends`/plugin dependencies invalidate the selection. Config dependencies that cannot be enumerated conservatively (including commented JSONC or package references) expand any changed working tree to full declared lint scope rather than guessing native config semantics.
 
 Typechecking uses the complete tsconfig file selection, not just lint paths. `--showConfig` establishes non-empty selected files; `--noEmit --incremental false` prevents compiler emission/build-info output. Composite projects incompatible with these flags fail natively rather than being rewritten. Biome uses explicit selected source files, does not format/write and does not hide unmatched-file failures. Missing tools, invalid configuration and empty selected scope fail visibly. No lint selected in quick mode means no coverage, not a typecheck pass.
 

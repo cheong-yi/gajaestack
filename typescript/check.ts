@@ -1,6 +1,19 @@
 #!/usr/bin/env bun
-import { existsSync, readFileSync, realpathSync, readdirSync, statSync } from "node:fs";
-import { resolve, relative, isAbsolute, extname, dirname, basename } from "node:path";
+import {
+	existsSync,
+	readFileSync,
+	realpathSync,
+	readdirSync,
+	statSync,
+} from "node:fs";
+import {
+	resolve,
+	relative,
+	isAbsolute,
+	extname,
+	dirname,
+	basename,
+} from "node:path";
 
 const root = process.cwd();
 function fail(message: string): never {
@@ -8,7 +21,8 @@ function fail(message: string): never {
 }
 
 function table(value: unknown, label: string): Record<string, unknown> {
-	if (!value || typeof value !== "object" || Array.isArray(value)) fail(`${label} must be a table`);
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		fail(`${label} must be a table`);
 	return value as Record<string, unknown>;
 }
 
@@ -20,10 +34,13 @@ function completionTimeoutMisplaced(node: unknown, factTable: object): boolean {
 	// Traversing the parsed document (tables and arrays) rejects the same key at
 	// the root and in other, nested, or array-embedded tables; dotted keys and
 	// table headers are indistinguishable after parsing, which is intentional.
-	if (Array.isArray(node)) return node.some((item) => completionTimeoutMisplaced(item, factTable));
+	if (Array.isArray(node))
+		return node.some((item) => completionTimeoutMisplaced(item, factTable));
 	if (!node || typeof node !== "object") return false;
 	return Object.entries(node).some(([key, child]) =>
-		key === COMPLETION_TIMEOUT_KEY ? node !== factTable : completionTimeoutMisplaced(child, factTable),
+		key === COMPLETION_TIMEOUT_KEY
+			? node !== factTable
+			: completionTimeoutMisplaced(child, factTable),
 	);
 }
 
@@ -33,50 +50,83 @@ function completionBudget(fact: Record<string, unknown>): void {
 	// fact alone: timeout execution and enforcement stay outside this checker.
 	if (!(COMPLETION_TIMEOUT_KEY in fact)) return;
 	const budget = fact[COMPLETION_TIMEOUT_KEY];
-	if (typeof budget !== "number" || !Number.isSafeInteger(budget) || budget < 1 || budget > MAX_COMPLETION_TIMEOUT_SECONDS) {
-		fail(`fact.${COMPLETION_TIMEOUT_KEY} must be an integer from 1 to ${MAX_COMPLETION_TIMEOUT_SECONDS}`);
+	if (
+		typeof budget !== "number" ||
+		!Number.isSafeInteger(budget) ||
+		budget < 1 ||
+		budget > MAX_COMPLETION_TIMEOUT_SECONDS
+	) {
+		fail(
+			`fact.${COMPLETION_TIMEOUT_KEY} must be an integer from 1 to ${MAX_COMPLETION_TIMEOUT_SECONDS}`,
+		);
 	}
 	const testCommand = fact.test_command;
-	if (typeof testCommand !== "string" || !testCommand.trim()) fail(`fact.${COMPLETION_TIMEOUT_KEY} requires a nonblank fact.test_command`);
+	if (typeof testCommand !== "string" || !testCommand.trim())
+		fail(
+			`fact.${COMPLETION_TIMEOUT_KEY} requires a nonblank fact.test_command`,
+		);
 }
 
-function advisoryScbCheck(document: Record<string, unknown>, fact: Record<string, unknown>): void {
+function advisoryScbCheck(
+	document: Record<string, unknown>,
+	fact: Record<string, unknown>,
+): void {
 	// Advisory-only independent selection: the declared command and runtime are
 	// validated as schema facts only; this checker never executes the command,
 	// and an unselected TypeScript consumer requires no runtime fact at all.
 	for (const category of ["required", "on_demand"] as const) {
 		const checks = Array.isArray(document[category]) ? document[category] : [];
-		if (checks.includes("scb-check")) fail(`scb-check is advisory-only; remove it from ${category}`);
+		if (checks.includes("scb-check"))
+			fail(`scb-check is advisory-only; remove it from ${category}`);
 	}
 	const advisory = Array.isArray(document.advisory) ? document.advisory : [];
-	const components = Array.isArray(fact.selected_components) ? fact.selected_components : [];
+	const components = Array.isArray(fact.selected_components)
+		? fact.selected_components
+		: [];
 	const selected = components.includes("scb-check");
 	const declared = advisory.includes("scb-check");
-	if (selected && !declared) fail("fact.selected_components selects 'scb-check' but advisory omits it; scb-check is advisory-only");
-	if (declared && !selected) fail("advisory selects 'scb-check' but fact.selected_components omits it");
+	if (selected && !declared)
+		fail(
+			"fact.selected_components selects 'scb-check' but advisory omits it; scb-check is advisory-only",
+		);
+	if (declared && !selected)
+		fail("advisory selects 'scb-check' but fact.selected_components omits it");
 	if (selected) {
 		const command = fact.scb_check_command;
-		if (typeof command !== "string" || !command.trim()) fail("fact.scb_check_command must be a nonblank string while advisory check 'scb-check' is selected");
+		if (typeof command !== "string" || !command.trim())
+			fail(
+				"fact.scb_check_command must be a nonblank string while advisory check 'scb-check' is selected",
+			);
 		const runtime = fact.python_version;
 		// Each segment is bounded to at most nine ASCII digits with one optional
 		// patch segment, so Number stays exact and finite before comparison.
 		const parts =
-			typeof runtime === "string" && /^[0-9]{1,9}\.[0-9]{1,9}(?:\.[0-9]{1,9})?$/.test(runtime) && runtime.trimEnd() === runtime
+			typeof runtime === "string" &&
+			/^[0-9]{1,9}\.[0-9]{1,9}(?:\.[0-9]{1,9})?$/.test(runtime) &&
+			runtime.trimEnd() === runtime
 				? runtime.split(".").map(Number)
 				: [];
-		const supported = parts.length >= 2 && (parts[0] > 3 || (parts[0] === 3 && parts[1] >= 12));
-		if (!supported) fail("fact.python_version must name a numeric Python runtime >= 3.12 while advisory check 'scb-check' is selected");
+		const supported =
+			parts.length >= 2 && (parts[0] > 3 || (parts[0] === 3 && parts[1] >= 12));
+		if (!supported)
+			fail(
+				"fact.python_version must name a numeric Python runtime >= 3.12 while advisory check 'scb-check' is selected",
+			);
 	} else if ("scb_check_command" in fact) {
-		fail("fact.scb_check_command must be removed while advisory check 'scb-check' is not selected");
+		fail(
+			"fact.scb_check_command must be removed while advisory check 'scb-check' is not selected",
+		);
 	}
 }
 
 function localPath(value: unknown, label: string): string {
-	if (typeof value !== "string" || !value.trim() || isAbsolute(value)) fail(`${label} must be a repository-relative path`);
+	if (typeof value !== "string" || !value.trim() || isAbsolute(value))
+		fail(`${label} must be a repository-relative path`);
 	const path = resolve(root, value as string);
 	if (!existsSync(path)) fail(`${label} does not exist: ${value}`);
 	const rel = relative(realpathSync(root), realpathSync(path));
-	if (rel === ".." || rel.startsWith("../") || isAbsolute(rel)) fail(`${label} escapes the repository`);
+	if (rel === ".." || rel.startsWith("../") || isAbsolute(rel))
+		fail(`${label} escapes the repository`);
 	return path;
 }
 
@@ -84,9 +134,17 @@ function sourceFiles(path: string): string[] {
 	// Directory traversal never follows links or dependency/cache directories.
 	try {
 		return readdirSync(path, { withFileTypes: true }).flatMap((item) => {
-			if (item.isSymbolicLink() || ["node_modules", ".git", ".gajaestack"].includes(item.name)) return [];
+			if (
+				item.isSymbolicLink() ||
+				["node_modules", ".git", ".gajaestack"].includes(item.name)
+			)
+				return [];
 			const child = resolve(path, item.name);
-			return item.isDirectory() ? sourceFiles(child) : /\.[cm]?[jt]sx?$/.test(extname(child)) ? [child] : [];
+			return item.isDirectory()
+				? sourceFiles(child)
+				: /\.[cm]?[jt]sx?$/.test(extname(child))
+					? [child]
+					: [];
 		});
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code !== "ENOTDIR") throw error;
@@ -96,13 +154,20 @@ function sourceFiles(path: string): string[] {
 
 function tool(name: string): string {
 	const path = resolve(root, "node_modules", ".bin", name);
-	if (!existsSync(path)) fail(`missing executable: ${path}; provision it through the consumer's native dependency process`);
+	if (!existsSync(path))
+		fail(
+			`missing executable: ${path}; provision it through the consumer's native dependency process`,
+		);
 	return path;
 }
 
 function run(name: string, args: string[]): number {
 	// Bun runs the installed JS launchers directly; Node and downloads are not required.
-	const result = Bun.spawnSync([process.execPath, tool(name), ...args], { cwd: root, stdout: "inherit", stderr: "inherit" });
+	const result = Bun.spawnSync([process.execPath, tool(name), ...args], {
+		cwd: root,
+		stdout: "inherit",
+		stderr: "inherit",
+	});
 	return result.exitCode;
 }
 
@@ -115,16 +180,140 @@ function elapsed(from: number): number {
 	return Math.max(0, Math.round(performance.now() - from));
 }
 
-function reportPhase(enabled: boolean, phase: string, files: number | null, status: number, from: number): void {
+function reportPhase(
+	enabled: boolean,
+	phase: string,
+	files: number | null,
+	status: number,
+	from: number,
+): void {
 	// Timing is stderr-only so native stdout/errors stay byte-identical and no
 	// run ever writes a timing artifact. Scope phases report discovery (counts
 	// and status) separately from the native check phases they precede.
 	if (!enabled) return;
 	const count = files === null ? "" : ` files=${files}`;
-	console.error(`gajaestack timing: ${phase}${count} status=${status} elapsed_ms=${elapsed(from)}`);
+	console.error(
+		`gajaestack timing: ${phase}${count} status=${status} elapsed_ms=${elapsed(from)}`,
+	);
 }
 
 type GitChanges = { paths: string[] } | { status: number; message: string };
+
+export type ContributorScope = {
+	referenceBranch?: string;
+	baselineCommit?: string;
+};
+
+function contributorGit(args: string[]): string {
+	const result = Bun.spawnSync(["git", "--no-optional-locks", ...args], {
+		cwd: root,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const decode = (bytes: Uint8Array): string =>
+		new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+	const detail = decode(result.stderr).trim();
+	if (result.exitCode !== 0 || detail)
+		fail(`contributor Git selection failed: ${detail || args.join(" ")}`);
+	return decode(result.stdout);
+}
+
+function contributorFiles(scope: ContributorScope): {
+	paths: string[];
+	eligible: Set<string>;
+} {
+	const { referenceBranch, baselineCommit } = scope;
+	if ((referenceBranch === undefined) === (baselineCommit === undefined))
+		fail("exactly one of referenceBranch and baselineCommit is required");
+	const value = referenceBranch ?? baselineCommit;
+	if (typeof value !== "string" || !value || value.startsWith("-"))
+		fail("reference/baseline must be a nonempty Git revision, not an option");
+	const top = contributorGit(["rev-parse", "--show-toplevel"]).replace(
+		/\r?\n$/,
+		"",
+	);
+	if (
+		contributorGit(["rev-parse", "--is-shallow-repository"]).trim() !== "false"
+	)
+		fail("contributor scope requires non-shallow Git history");
+	const commit = contributorGit([
+		"-c",
+		"core.warnAmbiguousRefs=true",
+		"rev-parse",
+		"--verify",
+		"--end-of-options",
+		`${value}^{commit}`,
+	]).trim();
+	let base = commit;
+	if (referenceBranch !== undefined) {
+		const bases = contributorGit(["merge-base", "--all", commit, "HEAD"])
+			.trim()
+			.split("\n")
+			.filter(Boolean);
+		if (bases.length !== 1)
+			fail("reference and HEAD must have exactly one merge base");
+		base = bases[0];
+	}
+	console.log(
+		`Contributor baseline: ${JSON.stringify({ reference: referenceBranch ?? null, baseline_commit: baselineCommit ?? null, resolved: commit, merge_base: referenceBranch === undefined ? null : base, baseline: base })}`,
+	);
+	const paths = (output: string): string[] =>
+		output
+			.split("\0")
+			.filter(Boolean)
+			.map((path) => resolve(top, path));
+	// --no-renames retains both names for invalidation; direct baseline/worktree
+	// comparison excludes historical/index edits whose current bytes reverted.
+	// --no-relative keeps paths rooted at top even in nested consumers with diff.relative.
+	const changed = paths(
+		contributorGit([
+			"diff",
+			"--no-relative",
+			"--no-ext-diff",
+			"--no-renames",
+			"--name-only",
+			"-z",
+			base,
+			"--",
+		]),
+	);
+	changed.push(
+		...paths(
+			contributorGit([
+				"ls-files",
+				"--full-name",
+				"--others",
+				"--exclude-standard",
+				"-z",
+			]),
+		),
+	);
+	const ignored = new Set(
+		paths(
+			contributorGit([
+				"ls-files",
+				"--full-name",
+				"--cached",
+				"--ignored",
+				"--exclude-standard",
+				"-z",
+			]),
+		),
+	);
+	const eligible = new Set(
+		paths(
+			contributorGit([
+				"ls-files",
+				"--full-name",
+				"--cached",
+				"--others",
+				"--exclude-standard",
+				"-z",
+			]),
+		).filter((path) => !ignored.has(path)),
+	);
+	return { paths: [...new Set(changed)], eligible };
+}
 
 function changedFiles(): GitChanges {
 	// Quick mode unions staged, unstaged and untracked entries from NUL-terminated
@@ -133,12 +322,19 @@ function changedFiles(): GitChanges {
 	// them). --no-optional-locks keeps status from rewriting the git index, and
 	// there is deliberately no fallback: when Git cannot report changes the run
 	// fails visibly instead of pretending to cover changed files.
-	const exec = (args: string[]): { ok: boolean; output: string; status: number; detail: string } => {
+	const exec = (
+		args: string[],
+	): { ok: boolean; output: string; status: number; detail: string } => {
 		try {
-			const result = Bun.spawnSync(["git", "--no-optional-locks", ...args], { cwd: root, stdout: "pipe", stderr: "pipe" });
+			const result = Bun.spawnSync(["git", "--no-optional-locks", ...args], {
+				cwd: root,
+				stdout: "pipe",
+				stderr: "pipe",
+			});
 			// Strict decoding fails safely on invalid UTF-8 instead of silently
 			// substituting characters that would corrupt changed-path matching.
-			const decode = (bytes: Uint8Array): string => new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+			const decode = (bytes: Uint8Array): string =>
+				new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 			return {
 				ok: result.exitCode === 0,
 				output: decode(result.stdout),
@@ -147,16 +343,27 @@ function changedFiles(): GitChanges {
 			};
 		} catch (error) {
 			const missing = (error as NodeJS.ErrnoException)?.code === "ENOENT";
-			return { ok: false, output: "", status: missing ? 127 : 2, detail: error instanceof Error ? error.message : String(error) };
+			return {
+				ok: false,
+				output: "",
+				status: missing ? 127 : 2,
+				detail: error instanceof Error ? error.message : String(error),
+			};
 		}
 	};
 	const status = exec(["status", "--porcelain", "-z", "--untracked-files=all"]);
 	if (!status.ok) {
-		return { status: status.status, message: `quick mode cannot determine changed files (no Git fallback): ${status.detail || `git status exited ${status.status}`}` };
+		return {
+			status: status.status,
+			message: `quick mode cannot determine changed files (no Git fallback): ${status.detail || `git status exited ${status.status}`}`,
+		};
 	}
 	const top = exec(["rev-parse", "--show-toplevel"]);
 	if (!top.ok) {
-		return { status: top.status, message: `quick mode cannot determine changed files (no Git fallback): ${top.detail || `git rev-parse --show-toplevel exited ${top.status}`}` };
+		return {
+			status: top.status,
+			message: `quick mode cannot determine changed files (no Git fallback): ${top.detail || `git rev-parse --show-toplevel exited ${top.status}`}`,
+		};
 	}
 	const toplevel = top.output.replace(/\r?\n$/, "");
 	const paths: string[] = [];
@@ -180,7 +387,11 @@ function changedFiles(): GitChanges {
 	return { paths };
 }
 
-type Invalidation = { files: Set<string>; dirs: Set<string>; unenumerable: boolean };
+type Invalidation = {
+	files: Set<string>;
+	dirs: Set<string>;
+	unenumerable: boolean;
+};
 
 function biomeNamed(path: string): boolean {
 	// A nested Biome config can affect its descendants without being an extends
@@ -199,7 +410,11 @@ function configInvalidation(config: string): Invalidation {
 	// dependencies unenumerable, after which any changed file expands the scope
 	// rather than being silently missed by changed-only coverage.
 	const invalidation: Invalidation = {
-		files: new Set([resolve(root, ".gajaestack/routing.toml"), config, import.meta.path]),
+		files: new Set([
+			resolve(root, ".gajaestack/routing.toml"),
+			config,
+			import.meta.path,
+		]),
 		dirs: new Set(),
 		unenumerable: false,
 	};
@@ -234,7 +449,14 @@ function configInvalidation(config: string): Invalidation {
 			if (value === undefined) continue;
 			const entries = Array.isArray(value) ? value : [value];
 			for (const entry of entries) {
-				if (typeof entry !== "string" || !(entry.startsWith("./") || entry.startsWith("../") || isAbsolute(entry))) {
+				if (
+					typeof entry !== "string" ||
+					!(
+						entry.startsWith("./") ||
+						entry.startsWith("../") ||
+						isAbsolute(entry)
+					)
+				) {
 					// Package-style or malformed references cannot be enumerated as
 					// repository files; treat every change as possibly relevant.
 					invalidation.unenumerable = true;
@@ -242,7 +464,8 @@ function configInvalidation(config: string): Invalidation {
 				}
 				const dependency = resolve(dirname(path), entry);
 				track(dependency);
-				if (field === "extends" && existsSync(dependency)) visit(dependency, seen);
+				if (field === "extends" && existsSync(dependency))
+					visit(dependency, seen);
 			}
 		}
 	};
@@ -250,44 +473,122 @@ function configInvalidation(config: string): Invalidation {
 	return invalidation;
 }
 
-async function runChecks(quick: boolean, binding: boolean, timing: boolean): Promise<number> {
+async function runChecks(
+	quick: boolean,
+	binding: boolean,
+	timing: boolean,
+	contributor?: ContributorScope,
+): Promise<number> {
 	try {
-		const document = table(Bun.TOML.parse(await Bun.file(resolve(root, ".gajaestack/routing.toml")).text()), "routing");
+		if (binding && contributor)
+			fail("native completion binding cannot use contributor lint selectors");
+		const contribution = contributor
+			? contributorFiles(contributor)
+			: undefined;
+		const document = table(
+			Bun.TOML.parse(
+				await Bun.file(resolve(root, ".gajaestack/routing.toml")).text(),
+			),
+			"routing",
+		);
 		const fact = table(document.fact, "fact");
 		const selected = fact?.selected_components;
-		if (fact?.schema_version !== 1 || !Array.isArray(selected) || !selected.includes("typescript")) fail("fact schema_version=1 and selected component typescript are required");
-		if (binding && !selected.includes("typescript-guard")) fail("Bun preload requires explicit typescript-guard selection");
-		if (completionTimeoutMisplaced(document, fact)) fail(`fact.${COMPLETION_TIMEOUT_KEY} is supported only as a direct [fact] key`);
+		if (
+			fact?.schema_version !== 1 ||
+			!Array.isArray(selected) ||
+			!selected.includes("typescript")
+		)
+			fail(
+				"fact schema_version=1 and selected component typescript are required",
+			);
+		if (binding && !selected.includes("typescript-guard"))
+			fail("Bun preload requires explicit typescript-guard selection");
+		if (completionTimeoutMisplaced(document, fact))
+			fail(
+				`fact.${COMPLETION_TIMEOUT_KEY} is supported only as a direct [fact] key`,
+			);
 		completionBudget(fact);
 		advisoryScbCheck(document, fact);
 		const options = table(document.typescript, "typescript");
-		if (!options || options.schema_version !== 1 || typeof options.typecheck !== "boolean" || typeof options.lint !== "boolean") fail("[typescript] requires schema_version=1 and explicit typecheck/lint booleans");
-		if (binding && !options.typecheck && !options.lint) fail("required Bun preload has no selected checks");
+		if (
+			!options ||
+			options.schema_version !== 1 ||
+			typeof options.typecheck !== "boolean" ||
+			typeof options.lint !== "boolean"
+		)
+			fail(
+				"[typescript] requires schema_version=1 and explicit typecheck/lint booleans",
+			);
+		if (binding && !options.typecheck && !options.lint)
+			fail("required Bun preload has no selected checks");
 		const required = document.required;
-		if (binding && (!Array.isArray(required) || required.includes("ts-typecheck") !== options.typecheck || required.includes("ts-lint") !== options.lint)) fail("preload checks must be explicitly listed in required and enabled consistently");
+		if (
+			binding &&
+			(!Array.isArray(required) ||
+				required.includes("ts-typecheck") !== options.typecheck ||
+				required.includes("ts-lint") !== options.lint)
+		)
+			fail(
+				"preload checks must be explicitly listed in required and enabled consistently",
+			);
 		if (options.typecheck && !quick) {
 			const scope = performance.now();
 			let scoped = false;
 			try {
 				const config = localPath(options.tsconfig, "tsconfig");
-				const command = [process.execPath, tool("tsc"), "--project", config, "--showConfig"];
-				const discovered = Bun.spawnSync(command, { cwd: root, stdout: "pipe", stderr: "inherit" });
+				const command = [
+					process.execPath,
+					tool("tsc"),
+					"--project",
+					config,
+					"--showConfig",
+				];
+				const discovered = Bun.spawnSync(command, {
+					cwd: root,
+					stdout: "pipe",
+					stderr: "inherit",
+				});
 				if (discovered.exitCode !== 0) {
 					process.stdout.write(discovered.stdout);
-					reportPhase(timing, "typecheck-scope", null, discovered.exitCode, scope);
+					reportPhase(
+						timing,
+						"typecheck-scope",
+						null,
+						discovered.exitCode,
+						scope,
+					);
 					return discovered.exitCode;
 				}
-				const project = table(JSON.parse(discovered.stdout.toString()), "tsconfig");
-				if (!Array.isArray(project.files) || project.files.length === 0) fail("tsconfig selects no files; no typecheck coverage");
+				const project = table(
+					JSON.parse(discovered.stdout.toString()),
+					"tsconfig",
+				);
+				if (!Array.isArray(project.files) || project.files.length === 0)
+					fail("tsconfig selects no files; no typecheck coverage");
 				reportPhase(timing, "typecheck-scope", project.files.length, 0, scope);
 				scoped = true;
-				console.log(`Typecheck: ${project.files.length} project files (tsconfig scope, not transpilation)`);
+				console.log(
+					`Typecheck: ${project.files.length} project files (tsconfig scope, not transpilation)`,
+				);
 				const phase = performance.now();
-				const status = run("tsc", ["--noEmit", "--incremental", "false", "--project", config]);
+				const status = run("tsc", [
+					"--noEmit",
+					"--incremental",
+					"false",
+					"--project",
+					config,
+				]);
 				reportPhase(timing, "typecheck", project.files.length, status, phase);
 				if (status !== 0) return status;
 			} catch (error) {
-				if (!scoped) reportPhase(timing, "typecheck-scope", null, failureStatus(error), scope);
+				if (!scoped)
+					reportPhase(
+						timing,
+						"typecheck-scope",
+						null,
+						failureStatus(error),
+						scope,
+					);
 				throw error;
 			}
 		}
@@ -296,15 +597,42 @@ async function runChecks(quick: boolean, binding: boolean, timing: boolean): Pro
 			let scoped = false;
 			try {
 				const config = localPath(options.biome_config, "biome_config");
-				if (!Array.isArray(options.paths) || options.paths.length === 0) fail("lint paths must not be empty");
-				const declared = [...new Set(options.paths.flatMap((path: unknown) => sourceFiles(localPath(path, "lint path"))))];
-				if (!declared.length) fail("selected lint scope contains no source files; no coverage");
+				if (!Array.isArray(options.paths) || options.paths.length === 0)
+					fail("lint paths must not be empty");
+				const declared = [
+					...new Set(
+						options.paths.flatMap((path: unknown) => {
+							if (
+								contribution &&
+								typeof path === "string" &&
+								path &&
+								!isAbsolute(path)
+							) {
+								const target = resolve(root, path);
+								const rel = relative(root, target);
+								if (
+									rel !== ".." &&
+									!rel.startsWith("../") &&
+									!existsSync(target) &&
+									contribution.paths.some(
+										(changed) =>
+											changed === target || changed.startsWith(`${target}/`),
+									)
+								)
+									return [];
+							}
+							return sourceFiles(localPath(path, "lint path"));
+						}),
+					),
+				];
+				if (!declared.length && !contribution)
+					fail("selected lint scope contains no source files; no coverage");
 				let files: string[] = declared;
-				if (quick) {
+				if (quick || contribution) {
 					// Quick mode is lint-only: intersect changed files with the declared
 					// scope, or expand to the full declared scope when a shared input
 					// changed. An empty intersection is an explicit no-op, never a pass.
-					const changes = changedFiles();
+					const changes = contribution ?? changedFiles();
 					if (!("paths" in changes)) {
 						reportPhase(timing, "lint-scope", null, changes.status, scope);
 						console.error(`gajaestack: ${changes.message}`);
@@ -312,28 +640,81 @@ async function runChecks(quick: boolean, binding: boolean, timing: boolean): Pro
 					}
 					const changed = new Set(changes.paths);
 					const invalidation = configInvalidation(config);
+					if (
+						contribution &&
+						([...invalidation.files].some(
+							(path) =>
+								path !== import.meta.path && !contribution.eligible.has(path),
+						) ||
+							[...invalidation.dirs].some(
+								(dir) =>
+									![...contribution.eligible].some((path) =>
+										path.startsWith(`${dir}/`),
+									),
+							))
+					)
+						invalidation.unenumerable = true;
 					const hits = changes.paths.filter(
 						(path) =>
 							biomeNamed(path) ||
 							invalidation.files.has(path) ||
+							(contribution &&
+								[
+									".gitignore",
+									"package.json",
+									"bun.lock",
+									"bun.lockb",
+									"package-lock.json",
+									"pnpm-lock.yaml",
+									"yarn.lock",
+								].includes(basename(path))) ||
 							[...invalidation.dirs].some((dir) => path.startsWith(`${dir}/`)),
 					);
 					// Installed shared code is ignored by consumer Git, including
 					// locally modified bytes and dependency upgrades. Without writing
 					// a baseline/cache we cannot prove it unchanged: conservatively
 					// cover the full declared lint scope on every installed invocation.
-					const installed = import.meta.path.split("/").includes("node_modules");
-					const expand = installed || hits.length > 0 || (invalidation.unenumerable && changes.paths.length > 0);
+					const installed =
+						!contribution &&
+						import.meta.path.split("/").includes("node_modules");
+					const expand =
+						installed ||
+						hits.length > 0 ||
+						(invalidation.unenumerable && changes.paths.length > 0);
 					if (expand) {
 						const reasons = hits.map((path) => relative(root, path));
-						if (installed) reasons.push("installed shared package (no tracked code baseline)");
-						if (invalidation.unenumerable) reasons.push("files possibly covered by unenumerable Biome config dependencies");
-						console.log(`Quick scope expanded to full selected scope: changed ${reasons.join(", ")}`);
+						if (installed)
+							reasons.push(
+								"installed shared package (no tracked code baseline)",
+							);
+						if (invalidation.unenumerable)
+							reasons.push(
+								"files possibly covered by unenumerable Biome config dependencies",
+							);
+						console.log(
+							`Quick scope expanded to full selected scope: changed ${reasons.join(", ")}`,
+						);
 					} else {
 						files = declared.filter((path) => changed.has(path));
 						if (!files.length) {
 							reportPhase(timing, "lint-scope", 0, 0, scope);
-							console.log(changes.paths.length ? "No changed files match the selected lint paths; nothing to check." : "No changed files; nothing to check.");
+							if (contribution) console.log("Contributor lint paths: []");
+							console.log(
+								changes.paths.length
+									? "No changed files match the selected lint paths; nothing to check."
+									: "No changed files; nothing to check.",
+							);
+							console.log("No coverage; this no-op is not a lint pass.");
+							return 0;
+						}
+					}
+					if (contribution) {
+						files = files.filter((path) => contribution.eligible.has(path));
+						console.log(
+							`Contributor lint paths (native Biome exclusions apply): ${JSON.stringify(files.map((path) => relative(root, path)))}`,
+						);
+						if (!files.length) {
+							reportPhase(timing, "lint-scope", 0, 0, scope);
 							console.log("No coverage; this no-op is not a lint pass.");
 							return 0;
 						}
@@ -344,15 +725,23 @@ async function runChecks(quick: boolean, binding: boolean, timing: boolean): Pro
 				tool("biome");
 				console.log(`Lint: ${files.length} selected source files`);
 				const phase = performance.now();
-				const status = run("biome", ["lint", `--config-path=${config}`, ...files]);
+				const status = run("biome", [
+					"lint",
+					`--config-path=${config}`,
+					...files,
+				]);
 				reportPhase(timing, "lint", files.length, status, phase);
 				if (status !== 0) return status;
 			} catch (error) {
-				if (!scoped) reportPhase(timing, "lint-scope", null, failureStatus(error), scope);
+				if (!scoped)
+					reportPhase(timing, "lint-scope", null, failureStatus(error), scope);
 				throw error;
 			}
 		}
-		if (!options.lint && (quick || !options.typecheck)) console.log("No checks selected for this mode; no coverage (not a check pass).");
+		if (!options.lint && (quick || !options.typecheck))
+			console.log(
+				"No checks selected for this mode; no coverage (not a check pass).",
+			);
 		return 0;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
@@ -361,24 +750,51 @@ async function runChecks(quick: boolean, binding: boolean, timing: boolean): Pro
 	}
 }
 
-export async function check(quick = false, binding = false, timing = false): Promise<number> {
+export async function check(
+	quick = false,
+	binding = false,
+	timing = false,
+	contributor?: ContributorScope,
+): Promise<number> {
 	// Timing is opt-in through --timing or GAJAESTACK_TIMING=1; the environment
 	// path exists for the native preload, which passes no arguments. The total
 	// line carries the final exit status on stderr for every outcome.
 	const enabled = timing || process.env.GAJAESTACK_TIMING === "1";
 	const started = performance.now();
-	const status = await runChecks(quick, binding, enabled);
-	if (enabled) console.error(`gajaestack timing: total status=${status} elapsed_ms=${elapsed(started)}`);
+	const status = await runChecks(quick, binding, enabled, contributor);
+	if (enabled)
+		console.error(
+			`gajaestack timing: total status=${status} elapsed_ms=${elapsed(started)}`,
+		);
 	return status;
 }
 
 if (import.meta.main) {
 	const args = process.argv.slice(2);
-	const quick = args.filter((arg) => arg === "--quick").length;
-	const timing = args.filter((arg) => arg === "--timing").length;
-	if (args.some((arg) => arg !== "--quick" && arg !== "--timing") || quick > 1 || timing > 1) {
-		console.error("usage: bun run gajaestack-check [--quick] [--timing]");
-		process.exit(2);
+	let quick = false;
+	let timing = false;
+	let contributor: ContributorScope | undefined;
+	const usage = (): never => {
+		console.error(
+			"usage: bun run gajaestack-check [--quick] [--timing] [--reference-branch REF | --baseline-commit COMMIT]",
+		);
+		return process.exit(2);
+	};
+	for (let index = 0; index < args.length; index++) {
+		const arg = args[index];
+		if (arg === "--quick" && !quick) quick = true;
+		else if (arg === "--timing" && !timing) timing = true;
+		else if (
+			(arg === "--reference-branch" || arg === "--baseline-commit") &&
+			!contributor
+		) {
+			const value = args[++index];
+			if (!value || value.startsWith("-")) usage();
+			contributor =
+				arg === "--reference-branch"
+					? { referenceBranch: value }
+					: { baselineCommit: value };
+		} else usage();
 	}
-	process.exit(await check(quick > 0, false, timing > 0));
+	process.exit(await check(quick, false, timing, contributor));
 }

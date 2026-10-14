@@ -21,6 +21,7 @@ they are not a network sandbox for arbitrary subprocesses.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -56,7 +57,9 @@ NODE_MODULES_PATH = Path(NODE_MODULES).resolve() if NODE_MODULES else None
 TIMEOUT = 240
 GIT_AVAILABLE = shutil.which("git") is not None
 REQUIRES_GIT_REASON = (
-    PREREQ_REASON if not NATIVE_TOOLS else "git executable is required for quick-mode tests"
+    PREREQ_REASON
+    if not NATIVE_TOOLS
+    else "git executable is required for quick-mode tests"
 )
 requires_native_git = unittest.skipUnless(
     NATIVE_TOOLS and GIT_AVAILABLE, REQUIRES_GIT_REASON
@@ -71,8 +74,8 @@ PACKAGE_NAME = "gajaestack"
 PINNED_VERSION = "0.1.0"
 UPGRADE_VERSION = "0.1.1"
 
-GOOD_TS = 'export const answer: number = 42;\n'
-OTHER_TS = 'export const other: number = 7;\n'
+GOOD_TS = "export const answer: number = 42;\n"
+OTHER_TS = "export const other: number = 7;\n"
 TYPE_ERROR_TS = 'export const wrong: number = "not a number";\n'
 LINT_ERROR_TS = "export function observe(): void {\n\tdebugger;\n}\n"
 UPGRADE_MARKER = "// gajaestack pinned upgrade marker 0.1.1"
@@ -191,7 +194,8 @@ def pack_kit(source: Path, destination: Path) -> Path:
     """Pack ``source`` bytes into exactly one tarball inside ``destination``."""
     destination.mkdir(parents=True, exist_ok=True)
     process = _run(
-        [BUN, "pm", "pack", "--ignore-scripts", "--destination", str(destination)], source
+        [BUN, "pm", "pack", "--ignore-scripts", "--destination", str(destination)],
+        source,
     )
     if process.returncode != 0:
         raise AssertionError(f"bun pm pack failed: {combined(process)}")
@@ -230,7 +234,9 @@ def stage_kit(destination: Path) -> Path:
         candidates = sorted(KIT.glob(entry)) if "*" in entry else [KIT / entry]
         matches = [path for path in candidates if path.is_file()]
         if not matches:
-            raise AssertionError(f"no repository source for manifest files entry: {entry}")
+            raise AssertionError(
+                f"no repository source for manifest files entry: {entry}"
+            )
         for match in matches:
             target = destination / match.relative_to(KIT)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -240,7 +246,17 @@ def stage_kit(destination: Path) -> Path:
 
 def install_tarball(root: Path, tarball: Path) -> None:
     process = _run(
-        [BUN, "add", "--dev", "--exact", "--offline", "--ignore-scripts", "--backend=copyfile", f"{PACKAGE_NAME}@{tarball}"], root
+        [
+            BUN,
+            "add",
+            "--dev",
+            "--exact",
+            "--offline",
+            "--ignore-scripts",
+            "--backend=copyfile",
+            f"{PACKAGE_NAME}@{tarball}",
+        ],
+        root,
     )
     if process.returncode != 0:
         raise AssertionError(f"bun add {tarball} failed: {combined(process)}")
@@ -269,7 +285,8 @@ def build_consumer(
     """Clean consumer that installs the tarball; no checker assets are copied in."""
     root = Path(root)
     (root / "package.json").write_text(
-        json.dumps({"name": "consumer", "version": "0.0.0", "private": True}, indent=2) + "\n",
+        json.dumps({"name": "consumer", "version": "0.0.0", "private": True}, indent=2)
+        + "\n",
         encoding="utf-8",
     )
     install_tarball(root, tarball)
@@ -296,9 +313,13 @@ def build_consumer(
             "include": ["src"],
         }
     )
-    (root / "tsconfig.json").write_text(json.dumps(project, indent=2) + "\n", encoding="utf-8")
+    (root / "tsconfig.json").write_text(
+        json.dumps(project, indent=2) + "\n", encoding="utf-8"
+    )
     (root / "biome.json").write_text(
-        json.dumps({"linter": {"enabled": True}, "formatter": {"enabled": False}}, indent=2)
+        json.dumps(
+            {"linter": {"enabled": True}, "formatter": {"enabled": False}}, indent=2
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -324,7 +345,9 @@ def run_bin(
     return _run([BUN, "run", BIN_ENTRY, *args], root, env=env)
 
 
-def run_guard(root: Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+def run_guard(
+    root: Path, env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return _run([BUN, "test"], root, env=env)
 
 
@@ -367,10 +390,16 @@ def git_init_baseline(root: Path) -> None:
             raise AssertionError(f"git {' '.join(args)} failed: {combined(result)}")
 
 
-def tree_snapshot(root: Path) -> set[str]:
-    """Files and directories under root except .git; checks must not write any."""
+def tree_snapshot(root: Path) -> dict[str, tuple[str, str]]:
+    """Record entry types, regular-file bytes and link targets outside .git."""
     return {
-        str(path.relative_to(root))
+        str(path.relative_to(root)): (
+            ("symlink", os.readlink(path))
+            if path.is_symlink()
+            else ("file", hashlib.sha256(path.read_bytes()).hexdigest())
+            if path.is_file()
+            else ("directory", "")
+        )
         for path in root.rglob("*")
         if ".git" not in path.relative_to(root).parts
     }
@@ -379,7 +408,27 @@ def tree_snapshot(root: Path) -> set[str]:
 class PackageManifestContractTests(unittest.TestCase):
     """Static root-manifest boundaries that need no native toolchain."""
 
-    def test_root_manifest_pins_version_and_declares_exact_exports_and_bin(self) -> None:
+    def test_tree_snapshot_detects_in_place_writes_and_symlink_targets(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.write_bytes(b"before")
+            link = root / "link"
+            link.symlink_to("source")
+            before = tree_snapshot(root)
+            source.write_bytes(b"after!")
+            rewritten = tree_snapshot(root)
+            self.assertEqual(before.keys(), rewritten.keys())
+            self.assertNotEqual(before, rewritten)
+            link.unlink()
+            link.symlink_to("missing")
+            retargeted = tree_snapshot(root)
+            self.assertEqual(rewritten.keys(), retargeted.keys())
+            self.assertNotEqual(rewritten, retargeted)
+
+    def test_root_manifest_pins_version_and_declares_exact_exports_and_bin(
+        self,
+    ) -> None:
         package = manifest()
         self.assertEqual(package["name"], PACKAGE_NAME)
         self.assertEqual(package["version"], PINNED_VERSION)
@@ -394,12 +443,17 @@ class PackageManifestContractTests(unittest.TestCase):
         for entry in files:
             with self.subTest(entry=entry):
                 self.assertFalse(entry.endswith(IMPLEMENTATION_SUFFIXES), entry)
-                self.assertFalse(entry.startswith((".gjc/", "scripts/", "tests/")), entry)
+                self.assertFalse(
+                    entry.startswith((".gjc/", "scripts/", "tests/")), entry
+                )
                 if "*" in entry:
-                    self.assertTrue(list(KIT.glob(entry)), f"files glob matches nothing: {entry}")
+                    self.assertTrue(
+                        list(KIT.glob(entry)), f"files glob matches nothing: {entry}"
+                    )
                 else:
                     self.assertTrue(
-                        (KIT / entry).is_file(), f"files entry missing from repository: {entry}"
+                        (KIT / entry).is_file(),
+                        f"files entry missing from repository: {entry}",
                     )
 
     def test_readme_relative_links_resolve_inside_packaged_files(self) -> None:
@@ -468,10 +522,12 @@ class PackageArchiveInventoryTests(NativePackageTestCase):
                 self.assertFalse(member.name.startswith("/"), member.name)
                 self.assertNotIn("..", parts, member.name)
                 self.assertTrue(
-                    member.name.startswith("package/"), f"member outside package/: {member.name}"
+                    member.name.startswith("package/"),
+                    f"member outside package/: {member.name}",
                 )
                 self.assertFalse(
-                    FORBIDDEN_COMPONENTS.intersection(parts), f"forbidden path in {member.name}"
+                    FORBIDDEN_COMPONENTS.intersection(parts),
+                    f"forbidden path in {member.name}",
                 )
                 self.assertFalse(
                     member.name.endswith(IMPLEMENTATION_SUFFIXES),
@@ -492,7 +548,9 @@ class PackageArchiveInventoryTests(NativePackageTestCase):
         for name, payload in payloads.items():
             with self.subTest(member=name):
                 source = KIT / name.removeprefix("package/")
-                self.assertTrue(source.is_file(), f"packed member has no repository source: {name}")
+                self.assertTrue(
+                    source.is_file(), f"packed member has no repository source: {name}"
+                )
                 self.assertEqual(payload, source.read_bytes(), name)
 
     def test_packed_manifest_keeps_version_exports_and_bin(self) -> None:
@@ -506,10 +564,260 @@ class PackageArchiveInventoryTests(NativePackageTestCase):
 
 
 class InstalledPackageCheckTests(NativePackageTestCase):
-    def test_native_removal_preserves_tools_and_requires_explicit_unbinding(self) -> None:
-        build_consumer(self.root, self.tarball, extends=False, bunfig=True, sentinel=True)
+    @requires_native_git
+    def test_contributor_diverged_net_scope_and_native_failure_recovery(self) -> None:
+        root = self.root / "consumer"
+        root.mkdir()
+        build_consumer(
+            root,
+            self.tarball,
+            sources={
+                "index.ts": GOOD_TS,
+                "other.ts": OTHER_TS,
+                "old.ts": GOOD_TS,
+                "deleted.ts": GOOD_TS,
+                "untouched.ts": LINT_ERROR_TS,
+            },
+        )
+        (root / ".gitignore").write_text("node_modules/\nignored.ts\n")
+        git_init_baseline(self.root)
+
+        def checked_git(*args):
+            result = git(*args, cwd=root)
+            self.assertEqual(result.returncode, 0, combined(result))
+            return result.stdout.strip()
+
+        def commit(message):
+            checked_git("add", ".")
+            checked_git(
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "-qm",
+                message,
+            )
+
+        base = checked_git("rev-parse", "HEAD")
+        checked_git("config", "diff.relative", "true")
+        checked_git("branch", "target")
+        checked_git("checkout", "-qb", "topic")
+        (root / "src/index.ts").write_text("export const answer: number = 43;\n")
+        commit("topic")
+        checked_git("checkout", "target")
+        (root / "src/reference-only.ts").write_text(LINT_ERROR_TS)
+        commit("target")
+        target = checked_git("rev-parse", "HEAD")
+        checked_git("checkout", "topic")
+        checked_git("mv", "src/old.ts", "src/renamed 한 글.ts")
+        (root / "src/deleted.ts").unlink()
+        (root / "src/staged.ts").write_text(GOOD_TS)
+        checked_git("add", "src/staged.ts")
+        (root / "src/local\n한 글.ts").write_text(GOOD_TS)
+        (root / "src/index.ts").write_text("export const answer: number = 44;\n")
+        (root / "src/ignored.ts").write_text(LINT_ERROR_TS)
+        (root / "outside.ts").write_text(LINT_ERROR_TS)
+        args = ("--quick", "--reference-branch", "target")
+        passed = run_bin(root, *args)
+        self.assertEqual(passed.returncode, 0, combined(passed))
+        report = json.loads(
+            next(
+                line.split(": ", 1)[1]
+                for line in passed.stdout.splitlines()
+                if line.startswith("Contributor baseline:")
+            )
+        )
+        self.assertEqual((report["resolved"], report["merge_base"]), (target, base))
+        paths = json.loads(
+            next(
+                line.split(": ", 1)[1]
+                for line in passed.stdout.splitlines()
+                if line.startswith("Contributor lint paths")
+            )
+        )
+        self.assertCountEqual(
+            paths,
+            [
+                "src/index.ts",
+                "src/renamed 한 글.ts",
+                "src/staged.ts",
+                "src/local\n한 글.ts",
+            ],
+        )
+        self.assertNotIn("scope expanded", passed.stdout)
+        self.assertNotIn("Typecheck:", passed.stdout)
+        (root / "src/index.ts").write_text(LINT_ERROR_TS)
+        rejected = run_bin(root, *args)
+        self.assertNotEqual(rejected.returncode, 0, combined(rejected))
+        self.assertIn("noDebugger", combined(rejected))
+        (root / "src/index.ts").write_text("export const answer: number = 44;\n")
+        recovered = run_bin(root, *args)
+        self.assertEqual(recovered.returncode, 0, combined(recovered))
+        (root / "src/index.ts").write_text(GOOD_TS)
+        reverted = run_bin(root, *args)
+        self.assertEqual(reverted.returncode, 0, combined(reverted))
+        paths = json.loads(
+            next(
+                line.split(": ", 1)[1]
+                for line in reverted.stdout.splitlines()
+                if line.startswith("Contributor lint paths")
+            )
+        )
+        self.assertNotIn("src/index.ts", paths)
+        # Export and CLI select the same consumer-rooted scope.
+        exported = _run(
+            [
+                BUN,
+                "-e",
+                'import {check} from "gajaestack/check"; process.exit(await check(true,false,false,{referenceBranch:"target"}))',
+            ],
+            root,
+        )
+        self.assertEqual(exported.returncode, 0, combined(exported))
+        (root / "biome.json").write_text(
+            '{"linter":{"enabled":true},"formatter":{"enabled":false}}\n'
+        )
+        expanded = run_bin(root, *args)
+        self.assertNotEqual(expanded.returncode, 0, combined(expanded))
+        self.assertIn("scope expanded", combined(expanded))
+        self.assertIn("untouched.ts", combined(expanded))
+        commit("current")
+        empty = run_bin(root, "--quick", "--baseline-commit", "HEAD")
+        self.assertEqual(empty.returncode, 0, combined(empty))
+        self.assertIn("No coverage", combined(empty))
+        self.assertNotIn("Lint:", empty.stdout)
+        (root / "src/other.ts").write_text(TYPE_ERROR_TS)
+        commit("type failure")
+        typed = run_bin(root, "--baseline-commit", "HEAD")
+        self.assertNotEqual(typed.returncode, 0, combined(typed))
+        self.assertIn("TS2322", combined(typed))
+
+    @requires_native_git
+    def test_contributor_invalid_references_and_histories(self) -> None:
+        build_consumer(self.root, self.tarball, baseline=True)
+
+        def checked_git(*args):
+            result = git(
+                "-c",
+                "user.name=test",
+                "-c",
+                "user.email=test@example.invalid",
+                *args,
+                cwd=self.root,
+            )
+            self.assertEqual(result.returncode, 0, combined(result))
+            return result.stdout.strip()
+
+        checked_git("branch", "ambiguous")
+        checked_git("tag", "ambiguous")
+        for args in (
+            ("--reference-branch", "missing"),
+            ("--reference-branch", "ambiguous"),
+            ("--baseline-commit", "missing"),
+            ("--baseline-commit", ""),
+            ("--reference-branch", "HEAD", "--baseline-commit", "HEAD"),
+            ("--reference-branch", "HEAD", "--reference-branch", "HEAD"),
+        ):
+            with self.subTest(args=args):
+                result = run_bin(self.root, "--quick", *args)
+                self.assertEqual(result.returncode, 2, combined(result))
+                self.assertNotIn("Lint:", result.stdout)
+        tree = checked_git("rev-parse", "HEAD^{tree}")
+        unrelated = checked_git("commit-tree", tree, "-m", "unrelated")
+        result = run_bin(self.root, "--quick", "--reference-branch", unrelated)
+        self.assertEqual(result.returncode, 2, combined(result))
+        base = checked_git("rev-parse", "HEAD")
+        left = checked_git("commit-tree", tree, "-p", base, "-m", "left")
+        right = checked_git("commit-tree", tree, "-p", base, "-m", "right")
+        merge_left = checked_git(
+            "commit-tree", tree, "-p", left, "-p", right, "-m", "merge left"
+        )
+        merge_right = checked_git(
+            "commit-tree", tree, "-p", right, "-p", left, "-m", "merge right"
+        )
+        checked_git("update-ref", "refs/heads/criss-cross", merge_left)
+        checked_git("checkout", "criss-cross")
+        result = run_bin(self.root, "--quick", "--reference-branch", merge_right)
+        self.assertEqual(result.returncode, 2, combined(result))
+        self.assertIn("exactly one merge base", combined(result))
+        with tempfile.TemporaryDirectory() as directory:
+            shallow = Path(directory) / "shallow"
+            result = git(
+                "clone",
+                "-q",
+                "--depth=1",
+                self.root.as_uri(),
+                str(shallow),
+                cwd=self.root,
+            )
+            self.assertEqual(result.returncode, 0, combined(result))
+            installed = self.root / "node_modules/gajaestack/typescript/check.ts"
+            result = _run(
+                [BUN, str(installed), "--quick", "--reference-branch", "HEAD"], shallow
+            )
+            self.assertEqual(result.returncode, 2, combined(result))
+            self.assertIn("non-shallow", combined(result))
+            result = _run(
+                [BUN, str(installed), "--quick", "--reference-branch", "HEAD"],
+                Path(directory),
+            )
+            self.assertEqual(result.returncode, 2, combined(result))
+            self.assertIn("not a git repository", combined(result))
+
+    @requires_native_git
+    def test_contributor_deleted_declared_file_and_biome_exclusion(self) -> None:
+        build_consumer(self.root, self.tarball)
+        facts = self.root / ".gajaestack/routing.toml"
+        facts.write_text(
+            facts.read_text().replace('paths = ["src"]', 'paths = ["src/index.ts"]')
+        )
+        (self.root / "biome.json").write_text(
+            '{"files":{"includes":["**","!src/index.ts"]},"linter":{"enabled":true}}\n'
+        )
+        git_init_baseline(self.root)
+        (self.root / "src/index.ts").unlink()
+        empty = run_bin(self.root, "--quick", "--baseline-commit", "HEAD")
+        self.assertEqual(empty.returncode, 0, combined(empty))
+        self.assertIn("No coverage", combined(empty))
+        (self.root / "src/index.ts").write_text(LINT_ERROR_TS)
+        excluded = run_bin(self.root, "--quick", "--baseline-commit", "HEAD")
+        self.assertNotEqual(excluded.returncode, 0, combined(excluded))
+        self.assertIn("No files were processed", combined(excluded))
+        (self.root / ".gitignore").write_text("node_modules/\nlocal-biome.json\n")
+        (self.root / "local-biome.json").write_text("{}\n")
+        (self.root / "biome.json").write_text(
+            '{"extends":["./local-biome.json"],"linter":{"enabled":true}}\n'
+        )
+        added = git("add", ".", cwd=self.root)
+        self.assertEqual(added.returncode, 0, combined(added))
+        committed = git(
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.invalid",
+            "commit",
+            "-qm",
+            "ignored policy dependency",
+            cwd=self.root,
+        )
+        self.assertEqual(committed.returncode, 0, combined(committed))
+        (self.root / "outside.ts").write_text(GOOD_TS)
+        expanded = run_bin(self.root, "--quick", "--baseline-commit", "HEAD")
+        self.assertNotEqual(expanded.returncode, 0, combined(expanded))
+        self.assertIn("unenumerable Biome config dependencies", combined(expanded))
+        self.assertIn("noDebugger", combined(expanded))
+
+    def test_native_removal_preserves_tools_and_requires_explicit_unbinding(
+        self,
+    ) -> None:
+        build_consumer(
+            self.root, self.tarball, extends=False, bunfig=True, sentinel=True
+        )
         facts = (self.root / ".gajaestack/routing.toml").read_bytes()
-        removed = _run([BUN, "remove", "--offline", "--ignore-scripts", PACKAGE_NAME], self.root)
+        removed = _run(
+            [BUN, "remove", "--offline", "--ignore-scripts", PACKAGE_NAME], self.root
+        )
         self.assertEqual(removed.returncode, 0, combined(removed))
         self.assertFalse((self.root / "node_modules/gajaestack").exists())
         still_bound = run_guard(self.root)
@@ -557,7 +865,9 @@ class InstalledPackageCheckTests(NativePackageTestCase):
         )
         selected = next(c for c in candidates if c["name"] == "native-quality")
         self.assertEqual(
-            (self.root / "node_modules/gajaestack/skills/native-quality/SKILL.md").stat().st_nlink,
+            (self.root / "node_modules/gajaestack/skills/native-quality/SKILL.md")
+            .stat()
+            .st_nlink,
             1,
         )
         self.assertEqual(
@@ -572,7 +882,9 @@ class InstalledPackageCheckTests(NativePackageTestCase):
             selected["description"], installed_skill.read_text(encoding="utf-8")
         )
         self.assertEqual(config.read_bytes(), before)
-        self.assertEqual((existing / "keep.txt").read_text(), "existing consumer skill root")
+        self.assertEqual(
+            (existing / "keep.txt").read_text(), "existing consumer skill root"
+        )
         # Name filters hide consumer collisions too; they are not path-selective.
         collision = existing / "verify-change"
         collision.mkdir()
@@ -612,11 +924,21 @@ class InstalledPackageCheckTests(NativePackageTestCase):
             package["version"] = UPGRADE_VERSION
             (staging / "package.json").write_text(json.dumps(package))
             selected_source = staging / "skills/native-quality/SKILL.md"
-            selected_source.write_text(selected_source.read_text() + f"\n{SKILL_MARKER}\n")
+            selected_source.write_text(
+                selected_source.read_text() + f"\n{SKILL_MARKER}\n"
+            )
             upgraded = pack_kit(staging, Path(directory) / "dist")
             installed = _run(
-                [BUN, "add", "--dev", "--exact", "--offline", "--ignore-scripts",
-                 "--backend=copyfile", f"{PACKAGE_NAME}@{upgraded}"],
+                [
+                    BUN,
+                    "add",
+                    "--dev",
+                    "--exact",
+                    "--offline",
+                    "--ignore-scripts",
+                    "--backend=copyfile",
+                    f"{PACKAGE_NAME}@{upgraded}",
+                ],
                 self.root,
             )
             self.assertEqual(installed.returncode, 0, combined(installed))
@@ -628,8 +950,11 @@ class InstalledPackageCheckTests(NativePackageTestCase):
         self.assertEqual(reobserved.returncode, 0, combined(reobserved))
         candidates = json.loads(reobserved.stdout)["candidates"]
         self.assertEqual(
-            {Path(item["path"]) for item in candidates
-             if str(self.root / "node_modules/gajaestack/skills") in item["path"]},
+            {
+                Path(item["path"])
+                for item in candidates
+                if str(self.root / "node_modules/gajaestack/skills") in item["path"]
+            },
             {installed_skill},
         )
         self.assertIn(str(consumer_skill / "SKILL.md"), {c["path"] for c in candidates})
@@ -709,7 +1034,9 @@ class InstalledPackageCheckTests(NativePackageTestCase):
     def test_quick_passes_with_full_installed_scope_on_clean_git(self) -> None:
         build_consumer(self.root, self.tarball, baseline=True)
         status = git("status", "--porcelain", cwd=self.root)
-        self.assertEqual(combined(status).strip(), "", "consumer baseline must be clean")
+        self.assertEqual(
+            combined(status).strip(), "", "consumer baseline must be clean"
+        )
 
         process = run_bin(self.root, "--quick")
         text = combined(process)
@@ -729,16 +1056,28 @@ class InstalledPackageCheckTests(NativePackageTestCase):
         build_consumer(
             self.root,
             self.tarball,
-            sources={"index.ts": GOOD_TS, "other.ts": OTHER_TS, "bad-lint.ts": LINT_ERROR_TS},
+            sources={
+                "index.ts": GOOD_TS,
+                "other.ts": OTHER_TS,
+                "bad-lint.ts": LINT_ERROR_TS,
+            },
             baseline=True,
         )
         status = git("status", "--porcelain", cwd=self.root)
-        self.assertEqual(combined(status).strip(), "", "committed lint error leaves clean status")
+        self.assertEqual(
+            combined(status).strip(), "", "committed lint error leaves clean status"
+        )
 
-        installed_check = self.root / "node_modules" / PACKAGE_NAME / "typescript" / "check.ts"
+        installed_check = (
+            self.root / "node_modules" / PACKAGE_NAME / "typescript" / "check.ts"
+        )
         original = installed_check.read_bytes()
-        installed_check.write_bytes(original + f"\n{INSTALLED_SOURCE_MARKER}\n".encode("utf-8"))
-        self.assertIn(INSTALLED_SOURCE_MARKER, installed_check.read_text(encoding="utf-8"))
+        installed_check.write_bytes(
+            original + f"\n{INSTALLED_SOURCE_MARKER}\n".encode("utf-8")
+        )
+        self.assertIn(
+            INSTALLED_SOURCE_MARKER, installed_check.read_text(encoding="utf-8")
+        )
 
         process = run_bin(self.root, "--quick")
         text = combined(process)
@@ -757,7 +1096,7 @@ class InstalledPackageCheckTests(NativePackageTestCase):
             'import { check } from "gajaestack/check";\n'
             "\n"
             "const status = await check();\n"
-            'console.log(`check status ${status}`);\n',
+            "console.log(`check status ${status}`);\n",
             encoding="utf-8",
         )
         process = _run([BUN, "run", script.name], self.root)
@@ -806,7 +1145,11 @@ class InstalledPackageCheckTests(NativePackageTestCase):
         build_consumer(
             self.root,
             self.tarball,
-            sources={"index.ts": GOOD_TS, "other.ts": OTHER_TS, "bad-lint.ts": LINT_ERROR_TS},
+            sources={
+                "index.ts": GOOD_TS,
+                "other.ts": OTHER_TS,
+                "bad-lint.ts": LINT_ERROR_TS,
+            },
             bunfig=True,
             sentinel=True,
         )
@@ -833,7 +1176,9 @@ class InstalledPackageCheckTests(NativePackageTestCase):
         self.assertTrue((self.root / "sentinel.txt").exists(), recovered_text)
         self.assertRegex(recovered_text, r"\b1 pass\b")
 
-    def test_missing_tool_facts_and_config_fail_with_native_status_then_recover(self) -> None:
+    def test_missing_tool_facts_and_config_fail_with_native_status_then_recover(
+        self,
+    ) -> None:
         # (case, native status, message, typecheck phase reached before the failure)
         cases = (
             ("missing tsc", 127, "missing executable:", False),
@@ -845,11 +1190,16 @@ class InstalledPackageCheckTests(NativePackageTestCase):
             with self.subTest(case=case):
                 with tempfile.TemporaryDirectory() as tmp:
                     root = Path(tmp)
-                    routing = {"missing config": None, "missing facts": NO_FACT_ROUTING_TOML}.get(
-                        case, ROUTING_TOML
-                    )
+                    routing = {
+                        "missing config": None,
+                        "missing facts": NO_FACT_ROUTING_TOML,
+                    }.get(case, ROUTING_TOML)
                     build_consumer(root, self.tarball, routing=routing)
-                    tool = case.split()[1] if case in ("missing tsc", "missing biome") else None
+                    tool = (
+                        case.split()[1]
+                        if case in ("missing tsc", "missing biome")
+                        else None
+                    )
                     if tool:
                         (root / "node_modules" / ".bin" / tool).unlink()
 
@@ -883,13 +1233,19 @@ class InstalledPackageCheckTests(NativePackageTestCase):
         build_consumer(self.root, self.tarball, baseline=True)
         before = tree_snapshot(self.root)
         full = run_bin(self.root, "--timing")
+        self.assertEqual(before, tree_snapshot(self.root), "full check must not write")
         quick = run_bin(self.root, "--quick", "--timing")
+        self.assertEqual(before, tree_snapshot(self.root), "quick check must not write")
+        contributor = run_bin(self.root, "--quick", "--baseline-commit", "HEAD")
         after = tree_snapshot(self.root)
         self.assertEqual(full.returncode, 0, combined(full))
         self.assertEqual(quick.returncode, 0, combined(quick))
+        self.assertEqual(contributor.returncode, 0, combined(contributor))
         self.assertIn("Lint: 2 selected source files", combined(full))
         self.assertIn("Quick scope expanded", combined(quick))
-        self.assertRegex(combined(quick), r"timing: lint files=2 status=0 elapsed_ms=\d+")
+        self.assertRegex(
+            combined(quick), r"timing: lint files=2 status=0 elapsed_ms=\d+"
+        )
         self.assertEqual(before, after, "checks must not write consumer files")
         self.assertFalse((self.root / "tsconfig.tsbuildinfo").exists())
 
@@ -939,7 +1295,9 @@ class InstalledPinnedUpgradeTests(NativePackageTestCase):
         installed = self.root / "node_modules" / PACKAGE_NAME
         baseline_installed = (installed / "typescript" / "check.ts").read_bytes()
         baseline_skill = (installed / UPGRADE_SKILL).read_bytes()
-        installed_manifest = json.loads((installed / "package.json").read_text(encoding="utf-8"))
+        installed_manifest = json.loads(
+            (installed / "package.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(installed_manifest["version"], PINNED_VERSION)
 
         holding = tempfile.TemporaryDirectory()
@@ -948,16 +1306,22 @@ class InstalledPinnedUpgradeTests(NativePackageTestCase):
         staged_manifest = staging / "package.json"
         staged = json.loads(staged_manifest.read_text(encoding="utf-8"))
         staged["version"] = UPGRADE_VERSION
-        staged_manifest.write_text(json.dumps(staged, indent=2) + "\n", encoding="utf-8")
+        staged_manifest.write_text(
+            json.dumps(staged, indent=2) + "\n", encoding="utf-8"
+        )
         staged_check = staging / "typescript" / "check.ts"
         staged_check.write_text(
-            staged_check.read_text(encoding="utf-8") + f"\n{UPGRADE_MARKER}\n", encoding="utf-8"
+            staged_check.read_text(encoding="utf-8") + f"\n{UPGRADE_MARKER}\n",
+            encoding="utf-8",
         )
         staged_skill = staging / UPGRADE_SKILL
         staged_skill.write_text(
-            staged_skill.read_text(encoding="utf-8") + f"\n{SKILL_MARKER}\n", encoding="utf-8"
+            staged_skill.read_text(encoding="utf-8") + f"\n{SKILL_MARKER}\n",
+            encoding="utf-8",
         )
-        self.assertNotEqual(staged_skill.read_bytes(), (KIT / UPGRADE_SKILL).read_bytes())
+        self.assertNotEqual(
+            staged_skill.read_bytes(), (KIT / UPGRADE_SKILL).read_bytes()
+        )
 
         upgrade_tarball = pack_kit(staging, Path(holding.name) / "upgrade-pack")
         self.assertEqual(upgrade_tarball.name, f"{PACKAGE_NAME}-{UPGRADE_VERSION}.tgz")
@@ -984,18 +1348,25 @@ class InstalledPinnedUpgradeTests(NativePackageTestCase):
         self.assertEqual(process.returncode, 0, text)
 
         consumer = json.loads((self.root / "package.json").read_text(encoding="utf-8"))
-        self.assertEqual(consumer["devDependencies"][PACKAGE_NAME], str(upgrade_tarball))
         self.assertEqual(
-            json.loads((installed / "package.json").read_text())["version"], UPGRADE_VERSION
+            consumer["devDependencies"][PACKAGE_NAME], str(upgrade_tarball)
         )
-        upgraded_code = (installed / "typescript" / "check.ts").read_text(encoding="utf-8")
+        self.assertEqual(
+            json.loads((installed / "package.json").read_text())["version"],
+            UPGRADE_VERSION,
+        )
+        upgraded_code = (installed / "typescript" / "check.ts").read_text(
+            encoding="utf-8"
+        )
         self.assertIn(UPGRADE_MARKER, upgraded_code)
         self.assertNotEqual(upgraded_code.encode("utf-8"), baseline_installed)
         # Only the staged bytes differ: bun's own install path refreshes the
         # dependency in place; this test never re-copies files into node_modules.
         upgraded_skill = (installed / UPGRADE_SKILL).read_bytes()
         self.assertIn(SKILL_MARKER.encode("utf-8"), upgraded_skill)
-        self.assertNotEqual(upgraded_skill, baseline_skill, "installed skill bytes must change")
+        self.assertNotEqual(
+            upgraded_skill, baseline_skill, "installed skill bytes must change"
+        )
 
         lock = self.root / "bun.lock"
         lock_before = lock.read_bytes()
@@ -1007,16 +1378,27 @@ class InstalledPinnedUpgradeTests(NativePackageTestCase):
 
         shutil.rmtree(self.root / "node_modules")
         reinstall = _run(
-            [BUN, "install", "--offline", "--frozen-lockfile", "--ignore-scripts", "--backend=copyfile"], self.root
+            [
+                BUN,
+                "install",
+                "--offline",
+                "--frozen-lockfile",
+                "--ignore-scripts",
+                "--backend=copyfile",
+            ],
+            self.root,
         )
         self.assertEqual(reinstall.returncode, 0, combined(reinstall))
         self.assertEqual(
             lock.read_bytes(), lock_before, "frozen reinstall must not rewrite the lock"
         )
         self.assertEqual(
-            json.loads((installed / "package.json").read_text())["version"], UPGRADE_VERSION
+            json.loads((installed / "package.json").read_text())["version"],
+            UPGRADE_VERSION,
         )
-        self.assertIn(UPGRADE_MARKER, (installed / "typescript" / "check.ts").read_text("utf-8"))
+        self.assertIn(
+            UPGRADE_MARKER, (installed / "typescript" / "check.ts").read_text("utf-8")
+        )
         self.assertEqual(
             (installed / UPGRADE_SKILL).read_bytes(),
             upgraded_skill,

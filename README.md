@@ -4,45 +4,34 @@ A modular repo-quality kit: practical agent guidance, reusable checks, and repea
 
 Start with [AGENTS.md](AGENTS.md), the agent entry point. The canonical design is [issue #1](https://github.com/cheong-yi/gajaestack/issues/1); the [scope invariant](docs/scope-invariant.md) summarizes its intended product scope without claiming every capability is delivered.
 
-## Install: pinned local artifacts
+## Quick start: contributor lint
 
-Use the authoritative [native artifact recipe](docs/python-trial.md#install-from-local-artifacts-no-registry) for maintainer build-once, consumer installation, upgrades and rollback. One kit version (`0.1.0` currently) covers the Python wheel and Bun tarball. Record reviewed source commit, version and SHA-256; retain the exact artifacts at durable, version-specific immutable locations and reuse them across approved consumers. Hashes identify bytes, not trusted source. There is no registry, updater, ordinary-run network check or silent tracking of latest.
+Choose the smallest useful selection; this example is **TypeScript lint only**, not a universal runner. Prerequisites: Bun >= 1.4.2, Git with the explicit contribution target and sufficient history, an existing local `node_modules/.bin/biome`, consumer-owned `biome.json`, and real `src` files. Reuse existing tools/configuration; the kit provisions none. Python-only users instead follow the independent [Ruff selection](docs/python-trial.md#python-quick-feedback-versus-completion), with Python >=3.11 and Ruff but no Bun or pytest requirement.
 
-Python-only consumption needs no Bun; TypeScript-only consumption needs no Python unless the independent [scb-check advisory](#optional-advisory-scb-check) is selected. Packages add no dependencies, install scripts/hooks or pytest11 autoload; selected checks use consumer-provisioned tools. pip/Bun own installation, while facts, native wiring and host configuration remain consumer-owned and separately approved.
+**Release prerequisite:** contributor selectors below describe the current source checkout, including uncommitted changes, not proven contents of retained `0.1.0` artifacts. Maintainers must first review and commit the feature, choose a new version if replacing an accepted release, then [build once and retain](docs/python-trial.md#maintainer-build-once-and-retain). Consumers install reviewed artifacts; they do not rebuild the kit.
 
-Use the reviewed [deselection and removal lifecycle](docs/python-trial.md#deselect-or-remove): retire applicable facts/native/host bindings, remove authoritative dependency pins, uninstall natively, and verify offline replay without disturbing unrelated selections. Uninstalling does not unload guidance already in a host session.
-
-## Check and test
+With installation separately approved, set `artifacts` to the retained absolute version directory and `version` to its reviewed version. Verify its recorded SHA-256 before the pinned devDependency install:
 
 ```sh
-bun run gajaestack-check             # completion: tsc --noEmit over the full tsconfig selection, then lint
-bun run gajaestack-check --quick     # quick: lint only, never typechecks
-bun run gajaestack-check --timing    # phase timing on stderr; also GAJAESTACK_TIMING=1
-bun -e 'import {check} from "gajaestack/check"; process.exit(await check())'   # installed-export check
-gajaestack-python-check --full       # Python completion: full declared scope
-gajaestack-python-check              # Python quick (no flag)
-gajaestack-imports setuptools        # import discoverability only: no install, no version-compatibility or init proof
+bun add --dev --exact --offline --ignore-scripts --backend=copyfile \
+  "gajaestack@$artifacts/gajaestack-$version.tgz"
 ```
 
-The setuptools console entrypoint does not add `-B`: when bytecode writes into a consumer-local `.venv` must be avoided, run `PYTHONDONTWRITEBYTECODE=1 gajaestack-python-check ...` (or `python -B -m gajaestack.check_changed_python ...`). The pytest guard binding already requires `-B` or the environment equivalent, installs are documented with `--no-compile`, and no bare console startup is claimed never to write bytecode. The Python check itself runs Ruff with `--no-cache`.
+Track the reviewed `package.json` and `bun.lock`, consumer `.gajaestack/routing.toml`, and native configuration; keep installed `node_modules/` (or Python `.venv/`) ignored. Save the guide's complete [minimal lint selection](docs/python-trial.md#minimal-typescript-lint-selection), adjusting paths and commands to actual consumer facts without replacing unrelated settings. Installation alone activates nothing: preloads, pytest plugins and skills are independent optional selections. [Install/replay, upgrades and removal](docs/python-trial.md#install-from-local-artifacts-no-registry) remain native package-manager operations.
 
-Quick is conservative when installed: both runtimes cover the **full declared lint scope on every invocation**, because ignored dependency code has no tracked baseline. Source behavior differs: TypeScript intersects changes with declared lint paths; ordinary Python source quick checks changed `.py` files, narrowed only by explicit `--path`, using bundled Ruff config unless `--config` is supplied. Policy changes can expand either to full declared scope; see [Python scope and command advice](docs/python-trial.md#python-quick-feedback-versus-completion). Empty quick scope is **no coverage**, not a pass; quick never typechecks.
+Routine contributor feedback has one native entrypoint per selected language. Set `TARGET` to the actual contribution target, never an inferred tracking branch:
 
-Installing the package activates nothing. Bind the guards yourself as a reviewed configuration change:
-
-```toml
-# bunfig.toml — preserve your existing preloads and their order.
-[test]
-preload = ["./existing-preload.ts", "gajaestack/preload"]
+```sh
+bun run gajaestack-check --quick --reference-branch "$TARGET"
+# Python alternative, only when Ruff is selected:
+PYTHONDONTWRITEBYTECODE=1 gajaestack-python-check --reference-branch "$TARGET"
 ```
 
-```ini
-# pytest.ini — explicit selection; nothing autoloads.
-[pytest]
-addopts = -q --strict-markers -p gajaestack.pytest_guard -p gajaestack.pytest_required_ruff -p no:cacheprovider
-```
+This lints current whole files with net changes since the target's merge base with HEAD: committed, staged, unstaged and non-ignored untracked work, intersected with declared lint scope. Policy changes can expand scope. It is not changed-line or last-push tracking. [Selectors, defaults and edge cases](docs/python-trial.md#contributor-lint-scope) remain explicit; no checker default changes.
 
-A guard-only consumer follows the [complete facts and plugin delta](docs/python-trial.md#guard-only-delta), not just plugin removal. Write and review consumer-owned `.gajaestack/routing.toml` using the [selection contracts](docs/python-trial.md#facts-selections); no command creates or rewrites it, and examples are starting points, not truth. Optional `[fact].completion_timeout_seconds` declares a project-owned outer budget for `test_command`, honoured by your launcher and not imposed by this kit — see the [budget contract](docs/python-trial.md#project-owned-outer-completion-budget). Demonstration is a valid pass plus a deliberately seeded rejection; native test failures, missing tools and empty selections stay failures.
+Full lint is separately available: `bun run gajaestack-check` for the lint-only selection, or `PYTHONDONTWRITEBYTECODE=1 gajaestack-python-check --full` for Ruff. Enabling TypeScript typechecking also makes the non-quick command run full-tsconfig `tsc --noEmit`; quick never typechecks. Behavioral tests, formatting, other typechecks and existing CI remain distinct obligations, not results implied by lint. Run the declared completion boundary before claiming completion.
+
+Read scope and diagnostics, not just exit status: missing selected tools, invalid facts/configuration/references and native errors fail; native warnings are not automatically promoted to errors. An empty quick/contributor intersection can exit `0` while explicitly reporting **no coverage**, never a lint pass; full empty scope fails. See [result semantics](docs/python-trial.md#contributor-lint-results). Demonstrate each adopted check with nonempty valid scope and a seeded rejection. Consumer wiring, adoption and CI changes require separate approval.
 
 ## Optional advisory: scb-check
 
