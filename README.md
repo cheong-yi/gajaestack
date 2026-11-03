@@ -107,6 +107,15 @@ python3 -m unittest discover -s tests
 seiso check --no-cache  # optional advisory stable rules; no hooks or CI
 ```
 
+The TypeScript checker tests skip without native prerequisites, and a skip is not a pass. For the seeded checker failure regression, run the two seeded cases from `tests/test_typescript_mechanical.py` (type error fails the full check; `debugger` lint fails `--quick`):
+
+```sh
+GAJAESTACK_BUN="$(command -v bun)" GAJAESTACK_TS_NODE_MODULES=/path/to/node_modules \
+  python3 scripts/check_seeded_regressions.py
+```
+
+The `node_modules` must provide `.bin/tsc` and `.bin/biome`; `git` must be on `PATH`. Exit `0` means both cases ran and passed; `1` means a case failed, errored or skipped (including a seeded fixture being accepted); `2` names each missing prerequisite.
+
 The source helper `python3 -B -m python.check_python_imports` (source file `python/check_python_imports.py`) checks import discoverability inside a checkout; installed consumers use `gajaestack-imports` instead. It does not install packages, establish version compatibility, prove successful module initialization, or replace running the selected check. Name only imports required by that check; build backends and parser plugins are independent prerequisites.
 
 Consumer-owned `.gajaestack/routing.toml` remains the single facts authority; no CLI manages assets, ownership records, or an `AGENTS.md` addendum. Installing anything does not wire native configuration: guards enforce only at their documented collection/import or preload boundary, and this kit never edits or repairs native configuration. Actual RERG/Gajaeway adoption, CI/merge enforcement, runners, deployment and downloads remain separately authorized, none of these bounded mechanisms delivers all six capabilities, and missing selected tools and failed checks remain failures, not passes or silent skips.
