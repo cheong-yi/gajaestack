@@ -65,19 +65,31 @@ gjc skills discover --source all --json   # unfiltered; page with --offset if tr
 
 The configured entry must be the **parent root** containing the skill directories, not a direct skill leaf. Use Bun's native `--backend=copyfile` on install, upgrade and replay when selecting GJC guidance: GJC 0.18.7 rejects multiply linked skill files, including Bun's default cache hardlinks, with “Skill path is not a regular file.” This is native dependency installation, not manually re-copying shared source. No guidance symlink is needed; an existing `.gjc/skills` directory stays untouched. Filters match names globally, not package paths: before adding an exclusion, check discovery for an unrelated consumer skill with the same name and flag any collision for a consumer-owned decision—never hide the consumer skill to fit this recipe. Keep unrelated skills and existing filters intact.
 
-For ordinary skill-selection acceptance, inspect unfiltered discovery: selected kit skills and unrelated skills must remain candidates, and excluded kit skills must not be candidates. Verify loading the selected installed body and repeat after a distinct pinned upgrade using the [native recipe](docs/python-trial.md#upgrade-and-rollback). Excluded names and paths in diagnostics do not block acceptance. This does not authorize loading or running excluded skills. Discovery listings, body invocations and agent assertions alone do not prove complete model-context isolation.
+For ordinary skill-selection acceptance, inspect unfiltered discovery: `native-quality` and unrelated skills must remain candidates. Verify loading the selected installed body and repeat after a distinct pinned upgrade using the [native recipe](docs/python-trial.md#upgrade-and-rollback). Discovery listings, body invocations and agent assertions alone do not prove complete model-context isolation.
 
 Observed with installed Python and Bun packages on GJC 0.18.7: filtered `candidates` retain the selected kit skill and unrelated skills, but `diagnostics` still expose excluded names and installed `SKILL.md` paths. The owner accepted this diagnostic exposure as a host limitation, not a Gajaestack acceptance blocker. Complete model-visible prompt exclusion remains **unverified**; separate GJC isolation changes and captured isolation trials are outside this scope. No kit loader workaround or copied source is introduced. Other hosts and unlisted loading paths remain unclaimed. This host-specific acceptance exception qualifies issue #1's intended zero context cost for unselected components; the canonical issue records this exception as decision 1A.
 
 ## Vendored pstack role sets
 
-Unmodified pstack files from a pinned revision, listed in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). They live in the source checkout and are not shipped in the Python or TypeScript packages:
+Unmodified pstack files from a pinned revision, listed in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). They live in the source checkout and are not shipped in the Python or TypeScript packages. Installing either package does not install the plugin.
 
-- `plugins/practice-role-sets/`: a GJC plugin bundle. `unslop` is one system appendix, so every session in that directory gets it once. The executor gets the nine principles, and the critic gets `no-comments`, each as its own agent appendix.
-- `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths.
-- `overlays/typescript-best-practices.md`: an `AGENTS.md` fragment for TypeScript repos only; see `overlays/README.md`.
+- `plugins/practice-role-sets/`: a GJC plugin bundle. `unslop` is one system appendix, so every new session that uses the agent directory where the plugin is enabled gets it once. The executor gets the nine principles, and the critic gets `no-comments`, each as its own agent appendix.
+- `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths. Plugin install does not register them.
+- `overlays/typescript-best-practices.md`: an `AGENTS.md` fragment for TypeScript repos only. Insert it only when that edit is explicitly requested for that repository. See `overlays/README.md`.
 
-The plugin is not installed by this repository. Appendix injection was observed in stored executor and critic prompts on this host after a user-scope install. A test-gajae child prompt has not been observed.
+Install the plugin into the agent directory that will spawn the session. From a checkout of this repository:
+
+```sh
+gjc plugin install --user plugins/practice-role-sets
+```
+
+Pass exactly one of `--user` or `--project`. `--user` installs into `~/.gjc/agent` unless `GJC_CODING_AGENT_DIR` is set, and that install loads for every session using that agent directory. A gajaeway broker does not use `~/.gjc/agent`. Set `GJC_CODING_AGENT_DIR` to the broker's agent directory, then run the `gjc` that broker launches. `--project` writes `.gjc/gjc-plugins/` under the current working directory and loads only for sessions whose working directory is that project.
+
+A session that already built its prompt keeps that prompt. A new session, or a newly spawned executor or critic, loads the install. Replacing changed plugin files requires `--force`. `gjc plugin list --user --json` shows whether `practice-role-sets` is enabled and not quarantined.
+
+The loader admits at most 8 KiB per appendix and 32 KiB for every enabled plugin appendix in one render. Another enabled plugin shares that total. An oversize block is dropped, not shortened.
+
+The two verification skills are not in the packages. To invoke them, add this checkout's `skills` directory to `skills.customDirectories` for that agent directory, or copy those two skill directories into that agent directory's skills root. Do not rewrite the skill bodies. Neither step inserts the TypeScript overlay.
 
 ## Routing guidance
 
