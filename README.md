@@ -76,7 +76,7 @@ Observed with installed Python and Bun packages on GJC 0.18.7: filtered `candida
 
 Unmodified pstack files from a pinned revision, listed in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). They live in the source checkout and are not shipped in the Python or TypeScript packages:
 
-- `plugins/practice-role-sets/`: a GJC plugin bundle with one agent appendix per file, for the executor (nine principles plus unslop) and the critic (no-comments plus unslop).
+- `plugins/practice-role-sets/`: a GJC plugin bundle. `unslop` is one system appendix, so every session in that directory gets it once. The executor gets the nine principles, and the critic gets `no-comments`, each as its own agent appendix.
 - `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths.
 - `overlays/typescript-best-practices.md`: an `AGENTS.md` fragment for TypeScript repos only; see `overlays/README.md`.
 

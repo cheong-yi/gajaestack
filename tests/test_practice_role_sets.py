@@ -26,9 +26,9 @@ EXECUTOR = (
     "principle-encode-lessons-in-structure",
     "principle-fix-root-causes",
     "principle-sequence-verifiable-units",
-    "unslop",
 )
-CRITIC = ("no-comments", "unslop")
+CRITIC = ("no-comments",)
+SYSTEM = ("unslop",)
 AGREED = {"executor": EXECUTOR, "critic": CRITIC}
 EXCLUDED = (
     "architect",
@@ -106,7 +106,15 @@ class PracticeRoleSetTests(unittest.TestCase):
     def test_manifest_names_only_the_agreed_agents_and_files(self) -> None:
         document = manifest()
         self.assertEqual(document["kind"], "gajae-code-plugin")
-        self.assertEqual(set(document), {"name", "version", "kind", "agent-appendix"})
+        self.assertEqual(
+            set(document), {"name", "version", "kind", "system_appendix", "agent-appendix"}
+        )
+        system = document["system_appendix"]
+        self.assertEqual([entry["name"] for entry in system], list(SYSTEM))
+        for entry in system:
+            self.assertNotIn("agent", entry)
+            self.assertNotIn("content", entry)
+            self.assertEqual(entry["path"], f"appendices/system/{entry['name']}.md")
         declared: dict[str, list[str]] = {"executor": [], "critic": []}
         for entry in document["agent-appendix"]:
             self.assertIn(entry["agent"], declared, entry)
@@ -122,16 +130,19 @@ class PracticeRoleSetTests(unittest.TestCase):
             if path.is_file()
         }
         self.assertEqual(
-            appendix_files, {entry["path"] for entry in document["agent-appendix"]}
+            appendix_files,
+            {entry["path"] for entry in system + document["agent-appendix"]},
         )
         upstream_files = {path.name for path in (PLUGIN / "upstream").iterdir()}
         self.assertEqual(
-            upstream_files, {f"{name}.md" for name in set(EXECUTOR) | set(CRITIC)}
+            upstream_files,
+            {f"{name}.md" for name in set(EXECUTOR) | set(CRITIC) | set(SYSTEM)},
         )
 
     def test_appendix_bodies_match_upstream_after_frontmatter(self) -> None:
-        for entry in manifest()["agent-appendix"]:
-            with self.subTest(agent=entry["agent"], name=entry["name"]):
+        document = manifest()
+        for entry in document["system_appendix"] + document["agent-appendix"]:
+            with self.subTest(name=entry["name"], agent=entry.get("agent", "system")):
                 appendix = (PLUGIN / entry["path"]).read_bytes()
                 source = pinned_source(
                     PLUGIN / "upstream" / f"{entry['name']}.md", entry["name"]
@@ -139,16 +150,33 @@ class PracticeRoleSetTests(unittest.TestCase):
                 self.assertEqual(appendix, body_after_frontmatter(source))
                 self.assertEqual(entry["sha256"], hashlib.sha256(appendix).hexdigest())
 
-    def test_appendix_sizes_stay_under_limits(self) -> None:
-        totals = {"executor": 0, "critic": 0}
-        for entry in manifest()["agent-appendix"]:
-            size = (PLUGIN / entry["path"]).stat().st_size
-            with self.subTest(path=entry["path"]):
-                self.assertLess(size, APPENDIX_LIMIT)
-            totals[entry["agent"]] += size
-        for agent, total in totals.items():
-            with self.subTest(agent=agent):
-                self.assertLess(total, AGENT_TOTAL_LIMIT)
+    def test_rendered_appendices_fit_the_shared_cap(self) -> None:
+        document = manifest()
+        plugin = document["name"]
+        total = 0
+        for entry in document["system_appendix"]:
+            body = (PLUGIN / entry["path"]).read_text(encoding="utf-8")
+            block = (
+                f'<gjc-plugin-system-appendix plugin="{plugin}" name="{entry["name"]}" '
+                f'sha256="{entry["sha256"]}" authority="appendix-lower-than-system">\n'
+                f"{body}\n</gjc-plugin-system-appendix>"
+            )
+            size = len(block.encode())
+            self.assertLess(size, APPENDIX_LIMIT, entry["path"])
+            total += size
+        for entry in document["agent-appendix"]:
+            body = (PLUGIN / entry["path"]).read_text(encoding="utf-8")
+            block = (
+                f'<gjc-plugin-agent-appendix plugin="{plugin}" agent="{entry["agent"]}" '
+                f'name="{entry["name"]}" sha256="{entry["sha256"]}" '
+                f'authority="appendix-lower-than-agent">\n{body}\n'
+                f"</gjc-plugin-agent-appendix>"
+            )
+            size = len(block.encode())
+            self.assertLess(size, APPENDIX_LIMIT, entry["path"])
+            total += size
+        self.assertLess(total, AGENT_TOTAL_LIMIT)
+        self.assertGreater(total, 20_000)
 
     def test_no_excluded_skill_in_plugin_directory(self) -> None:
         for path in PLUGIN.rglob("*"):

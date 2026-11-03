@@ -33,6 +33,9 @@ Full upstream copies kept for attribution beside the plugin bundle:
   plugins/practice-role-sets/upstream/principle-type-system-discipline.md
   plugins/practice-role-sets/upstream/unslop.md
 
+Plugin appendix body (system, one copy):
+  plugins/practice-role-sets/appendices/system/unslop.md
+
 Plugin appendix bodies (executor):
   plugins/practice-role-sets/appendices/executor/principle-subtract-before-you-add.md
   plugins/practice-role-sets/appendices/executor/principle-model-the-domain.md
@@ -43,11 +46,9 @@ Plugin appendix bodies (executor):
   plugins/practice-role-sets/appendices/executor/principle-encode-lessons-in-structure.md
   plugins/practice-role-sets/appendices/executor/principle-fix-root-causes.md
   plugins/practice-role-sets/appendices/executor/principle-sequence-verifiable-units.md
-  plugins/practice-role-sets/appendices/executor/unslop.md
 
 Plugin appendix bodies (critic):
   plugins/practice-role-sets/appendices/critic/no-comments.md
-  plugins/practice-role-sets/appendices/critic/unslop.md
 
 On-demand skills (full copies):
   skills/create-verification-skill/SKILL.md

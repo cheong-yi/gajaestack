@@ -2,6 +2,13 @@
   "name": "practice-role-sets",
   "version": "0.1.0",
   "kind": "gajae-code-plugin",
+  "system_appendix": [
+    {
+      "name": "unslop",
+      "path": "appendices/system/unslop.md",
+      "sha256": "a71c9bdf6ca3b61e1c748e45d44d0267e802c8cb94e84828bc037bf79a658c88"
+    }
+  ],
   "agent-appendix": [
     {
       "name": "principle-subtract-before-you-add",
@@ -58,22 +65,10 @@
       "sha256": "937804c1b8d250eb6dfb966f4f4e7997d345568c32e93ed25c1db3fd33b21821"
     },
     {
-      "name": "unslop",
-      "agent": "executor",
-      "path": "appendices/executor/unslop.md",
-      "sha256": "a71c9bdf6ca3b61e1c748e45d44d0267e802c8cb94e84828bc037bf79a658c88"
-    },
-    {
       "name": "no-comments",
       "agent": "critic",
       "path": "appendices/critic/no-comments.md",
       "sha256": "938715f6a07fcc0b0fdbb2b2c55996496d06eecc73a269f0fcfc85c52232051b"
-    },
-    {
-      "name": "unslop",
-      "agent": "critic",
-      "path": "appendices/critic/unslop.md",
-      "sha256": "a71c9bdf6ca3b61e1c748e45d44d0267e802c8cb94e84828bc037bf79a658c88"
     }
   ]
 }
