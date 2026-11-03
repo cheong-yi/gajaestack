@@ -13,6 +13,63 @@ Relevant upstream skills: principle-type-system-discipline,
 create-verification-skill, principle-subtract-before-you-add, and
 principle-test-behavior-not-implementation.
 
+Vendored pstack files, copied from pinned revision
+12d587dfb20741cafc376c42c696c5f6e2a64487
+(https://github.com/cursor/plugins/tree/12d587dfb20741cafc376c42c696c5f6e2a64487/pstack).
+Each upstream source is pstack/skills/<name>/SKILL.md unless stated otherwise.
+Appendix and overlay files hold the upstream body after the frontmatter,
+byte for byte; every other file is a full unmodified copy.
+
+Full upstream copies kept for attribution beside the plugin bundle:
+  plugins/practice-role-sets/upstream/no-comments.md
+  plugins/practice-role-sets/upstream/principle-boundary-discipline.md
+  plugins/practice-role-sets/upstream/principle-encode-lessons-in-structure.md
+  plugins/practice-role-sets/upstream/principle-fix-root-causes.md
+  plugins/practice-role-sets/upstream/principle-model-the-domain.md
+  plugins/practice-role-sets/upstream/principle-prove-it-works.md
+  plugins/practice-role-sets/upstream/principle-sequence-verifiable-units.md
+  plugins/practice-role-sets/upstream/principle-subtract-before-you-add.md
+  plugins/practice-role-sets/upstream/principle-test-behavior-not-implementation.md
+  plugins/practice-role-sets/upstream/principle-type-system-discipline.md
+  plugins/practice-role-sets/upstream/unslop.md
+
+Plugin appendix bodies (executor):
+  plugins/practice-role-sets/appendices/executor/principle-subtract-before-you-add.md
+  plugins/practice-role-sets/appendices/executor/principle-model-the-domain.md
+  plugins/practice-role-sets/appendices/executor/principle-boundary-discipline.md
+  plugins/practice-role-sets/appendices/executor/principle-type-system-discipline.md
+  plugins/practice-role-sets/appendices/executor/principle-test-behavior-not-implementation.md
+  plugins/practice-role-sets/appendices/executor/principle-prove-it-works.md
+  plugins/practice-role-sets/appendices/executor/principle-encode-lessons-in-structure.md
+  plugins/practice-role-sets/appendices/executor/principle-fix-root-causes.md
+  plugins/practice-role-sets/appendices/executor/principle-sequence-verifiable-units.md
+  plugins/practice-role-sets/appendices/executor/unslop.md
+
+Plugin appendix bodies (critic):
+  plugins/practice-role-sets/appendices/critic/no-comments.md
+  plugins/practice-role-sets/appendices/critic/unslop.md
+
+On-demand skills (full copies):
+  skills/create-verification-skill/SKILL.md
+  skills/create-verification-skill/references/feature-map-example/README.md
+    (source: pstack/skills/create-verification-skill/references/feature-map-example/README.md)
+  skills/create-verification-skill/references/feature-map-example/create-note.md
+    (source: pstack/skills/create-verification-skill/references/feature-map-example/create-note.md)
+  skills/create-verification-skill/references/feature-map-example/search.md
+    (source: pstack/skills/create-verification-skill/references/feature-map-example/search.md)
+  skills/maintain-verification-skill/SKILL.md
+
+TypeScript AGENTS.md fragment (body after frontmatter) and its full source:
+  overlays/typescript-best-practices.md
+  overlays/upstream/typescript-best-practices.md
+
+The host notes (skills/*/HOST.md), overlays/README.md, and
+plugins/practice-role-sets/gajae-plugin.json are Gajaestack's own files.
+These vendored files are kept in the source checkout and are not shipped in
+the Python or TypeScript packages.
+Native check implementations remain Gajaestack's own and are still not
+attributed to Lauren Tan.
+
 License source, pinned to its introduction revision:
 https://github.com/cursor/plugins/blob/24bd6eb895d63a6e76fabfea2cb344384d177d79/pstack/LICENSE
 The following upstream notice is reproduced verbatim:

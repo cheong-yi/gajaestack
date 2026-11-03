@@ -45,3 +45,28 @@ kind = "howto"
 [[kinds]]
 path = "python/routing/AGENTS.md"
 kind = "howto"
+
+[[kinds]]
+path = "skills/*/HOST.md"
+kind = "howto"
+
+[[kinds]]
+path = "overlays/README.md"
+kind = "howto"
+
+# Vendored pstack text, kept byte for byte (THIRD_PARTY_NOTICES).
+[[kinds]]
+path = "plugins/practice-role-sets/**"
+kind = "reference"
+
+[[kinds]]
+path = "overlays/typescript-best-practices.md"
+kind = "reference"
+
+[[kinds]]
+path = "overlays/upstream/**"
+kind = "reference"
+
+[[kinds]]
+path = "skills/create-verification-skill/references/**"
+kind = "reference"

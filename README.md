@@ -72,6 +72,16 @@ For ordinary skill-selection acceptance, inspect unfiltered discovery: selected 
 
 Observed with installed Python and Bun packages on GJC 0.18.7: filtered `candidates` retain the selected kit skill and unrelated skills, but `diagnostics` still expose excluded names and installed `SKILL.md` paths. The owner accepted this diagnostic exposure as a host limitation, not a Gajaestack acceptance blocker. Complete model-visible prompt exclusion remains **unverified**; separate GJC isolation changes and captured isolation trials are outside this scope. No kit loader workaround or copied source is introduced. Other hosts and unlisted loading paths remain unclaimed. This host-specific acceptance exception qualifies issue #1's intended zero context cost for unselected components; the canonical issue records this exception as decision 1A.
 
+## Vendored pstack role sets
+
+Unmodified pstack files from a pinned revision, listed in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). They live in the source checkout and are not shipped in the Python or TypeScript packages:
+
+- `plugins/practice-role-sets/`: a GJC plugin bundle with one agent appendix per file, for the executor (nine principles plus unslop) and the critic (no-comments plus unslop).
+- `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths.
+- `overlays/typescript-best-practices.md`: an `AGENTS.md` fragment for TypeScript repos only; see `overlays/README.md`.
+
+The plugin is not installed anywhere by this repository, and appendix injection has not been observed in a live session.
+
 ## Routing guidance
 
 The static packaged resource `python/routing/AGENTS.md` (present in both runtimes) is included explicitly — never automatically — by appending it to the existing system prompt from the consumer's working directory:

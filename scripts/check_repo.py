@@ -18,6 +18,10 @@ REQUIRED_FRONTMATTER = {
     "use_when",
     "when_to_run",
 }
+# Vendored upstream pstack skills keep their upstream frontmatter byte for byte
+# (tests/test_practice_role_sets.py), so only the host-required fields apply.
+VENDORED_SKILLS = {"create-verification-skill", "maintain-verification-skill"}
+VENDORED_FRONTMATTER = {"name", "description"}
 IGNORED_DIRS = {".git", ".gjc", "__pycache__"}
 
 # Routing facts validation lives in the installed ``gajaestack.routing`` module
@@ -76,7 +80,12 @@ def skill_errors(skill_file: Path) -> list[str]:
         else:
             fields[key] = value
 
-    for key in sorted(REQUIRED_FRONTMATTER - fields.keys()):
+    required = (
+        VENDORED_FRONTMATTER
+        if skill_file.parent.name in VENDORED_SKILLS
+        else REQUIRED_FRONTMATTER
+    )
+    for key in sorted(required - fields.keys()):
         errors.append(f"{skill_file}: missing required metadata field {key!r}")
     if fields.get("name") and fields["name"] != skill_file.parent.name:
         errors.append(

@@ -82,6 +82,29 @@ class CheckRepoTests(unittest.TestCase):
             self.make_repo(root)
             self.assertEqual(check(root), [])
 
+    def test_vendored_skill_needs_only_upstream_metadata(self) -> None:
+        upstream = "---\nname: {0}\ndescription: Upstream.\n---\n\nBody.\n"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            vendored = root / "skills/maintain-verification-skill"
+            vendored.mkdir()
+            (vendored / "SKILL.md").write_text(
+                upstream.format("maintain-verification-skill"), encoding="utf-8"
+            )
+            self.assertEqual(check(root), [])
+            (vendored / "SKILL.md").write_text(
+                "---\nname: maintain-verification-skill\n---\n\nBody.\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(len(check(root)), 1)
+            own = root / "skills/own-skill"
+            own.mkdir()
+            (own / "SKILL.md").write_text(upstream.format("own-skill"), encoding="utf-8")
+            self.assertEqual(
+                sum("missing required metadata field" in e for e in check(root)), 4
+            )
+
     def test_typescript_only_facts_need_no_python_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
