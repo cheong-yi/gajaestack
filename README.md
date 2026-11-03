@@ -39,7 +39,7 @@ Read scope and diagnostics, not just exit status: missing selected tools, invali
 
 ## Skills (GJC)
 
-Skill guidance helps agents reason; it does not enforce behavior by itself. The skills ship inside both packages. Adding the package root alone exposes all three skills' metadata. GJC 0.18.7 native name filters narrow discovery candidates without a global allowlist. Gajaestack acceptance uses ordinary skill selection and accepts the host limitation that diagnostics may expose excluded skill names and paths; complete model-context isolation is not an acceptance gate.
+Skill guidance helps agents reason; it does not enforce behavior by itself. The package ships one skill, `native-quality`. GJC 0.18.7 native name filters narrow discovery candidates without a global allowlist. Gajaestack acceptance uses ordinary skill selection and accepts the host limitation that diagnostics may expose excluded skill names and paths; complete model-context isolation is not an acceptance gate.
 
 ```yaml
 # .gjc/config.yml — merge into the existing config: preserve current
@@ -50,9 +50,6 @@ configSchemaVersion: 2
 skills:
   customDirectories:
     - node_modules/gajaestack/skills
-  ignoredSkills:
-    - type-discipline
-    - verify-change
 ```
 
 ```sh
@@ -80,7 +77,7 @@ Unmodified pstack files from a pinned revision, listed in [THIRD_PARTY_NOTICES](
 - `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths.
 - `overlays/typescript-best-practices.md`: an `AGENTS.md` fragment for TypeScript repos only; see `overlays/README.md`.
 
-The plugin is not installed anywhere by this repository, and appendix injection has not been observed in a live session.
+The plugin is not installed by this repository. Appendix injection was observed in stored executor and critic prompts on this host after a user-scope install. A test-gajae child prompt has not been observed.
 
 ## Routing guidance
 

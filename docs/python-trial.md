@@ -97,7 +97,7 @@ Review the scope first: deselecting one component need not remove the shared pac
 
 ## Facts selections
 
-Facts are declarations read from consumer cwd, not automatic activation. These **native facts selections** are separate from GJC's independently selected `native-quality`, `type-discipline` and `verify-change` guidance; skill names are not `selected_components` values. Choose only needed components, not the whole table.
+Facts are declarations read from consumer cwd, not automatic activation. These **native facts selections** are separate from GJC's independently selected `native-quality` guidance; skill names are not `selected_components` values. Choose only needed components, not the whole table.
 
 For a complete facts file accepted by `gajaestack-routing --root .`, the common contract is:
 

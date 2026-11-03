@@ -79,7 +79,7 @@ OTHER_TS = "export const other: number = 7;\n"
 TYPE_ERROR_TS = 'export const wrong: number = "not a number";\n'
 LINT_ERROR_TS = "export function observe(): void {\n\tdebugger;\n}\n"
 UPGRADE_MARKER = "// gajaestack pinned upgrade marker 0.1.1"
-UPGRADE_SKILL = "skills/type-discipline/SKILL.md"
+UPGRADE_SKILL = "skills/native-quality/SKILL.md"
 SKILL_MARKER = "Staged prose marker distinguishing the packaged 0.1.1 artifact."
 INSTALLED_SOURCE_MARKER = "// locally modified installed dependency source"
 
@@ -94,8 +94,6 @@ EXPECTED_FILES = {
     "typescript/preload.ts",
     "typescript/tsconfig.json",
     "skills/native-quality/SKILL.md",
-    "skills/type-discipline/SKILL.md",
-    "skills/verify-change/SKILL.md",
     "python/routing/AGENTS.md",
     "docs/python-trial.md",
     "docs/scope-invariant.md",
@@ -111,8 +109,6 @@ EXPECTED_MEMBERS = {
     "package/docs/scope-invariant.md",
     "package/python/routing/AGENTS.md",
     "package/skills/native-quality/SKILL.md",
-    "package/skills/type-discipline/SKILL.md",
-    "package/skills/verify-change/SKILL.md",
     "package/typescript/check.ts",
     "package/typescript/preload.ts",
     "package/typescript/tsconfig.json",
@@ -892,7 +888,7 @@ class InstalledPackageCheckTests(NativePackageTestCase):
         collision.mkdir()
         collision.joinpath("SKILL.md").write_text(
             "---\nname: verify-change\n"
-            "description: Consumer-owned collision with an ignored kit skill name.\n"
+            "description: Consumer-owned skill whose name is ignored.\n"
             "---\nConsumer-owned collision body.\n"
         )
         config.write_text(before.decode().split("  ignoredSkills:")[0])

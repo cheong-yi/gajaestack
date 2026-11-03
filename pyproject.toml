@@ -39,6 +39,4 @@ gajaestack = [
 ]
 gajaestack_guidance = [
     "native-quality/SKILL.md",
-    "type-discipline/SKILL.md",
-    "verify-change/SKILL.md",
 ]

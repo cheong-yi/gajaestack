@@ -17,8 +17,6 @@
     "typescript/preload.ts",
     "typescript/tsconfig.json",
     "skills/native-quality/SKILL.md",
-    "skills/type-discipline/SKILL.md",
-    "skills/verify-change/SKILL.md",
     "python/routing/AGENTS.md",
     "docs/python-trial.md",
     "docs/scope-invariant.md",
