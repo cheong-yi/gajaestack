@@ -1,6 +1,6 @@
 {
   "name": "practice-role-sets",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "kind": "gajae-code-plugin",
   "system_appendix": [
     {
@@ -38,7 +38,7 @@
       "name": "principle-test-behavior-not-implementation",
       "agent": "executor",
       "path": "appendices/executor/principle-test-behavior-not-implementation.md",
-      "sha256": "2dcdc88cde706ed1c3ad53e88b534468c4bea5daf1ccd96cc9c659a497c7a6e4"
+      "sha256": "f5104476701735a3c44ea7d04a2ba96da6d6e1187e585187b08d4f579adb7c29"
     },
     {
       "name": "principle-prove-it-works",
@@ -50,13 +50,19 @@
       "name": "principle-encode-lessons-in-structure",
       "agent": "executor",
       "path": "appendices/executor/principle-encode-lessons-in-structure.md",
-      "sha256": "a4c2a02d1e4a0e97d8b5ff2343228e0f0c504e87c9173b6cdb1f96f3918a3e63"
+      "sha256": "0daaf085c4ef6899a74f05d1b160773a7ca5bfc439cddca970bc2d2f9493df46"
     },
     {
       "name": "principle-fix-root-causes",
       "agent": "executor",
       "path": "appendices/executor/principle-fix-root-causes.md",
-      "sha256": "e3e94c688b6cc14dff9be80fa2d0c9780d386722b67368613f5e4b812118a413"
+      "sha256": "7b1850ee3c514f67f9515ab79d9941c753720121a3f92a005103ac8952ac489e"
+    },
+    {
+      "name": "correct",
+      "agent": "executor",
+      "path": "appendices/executor/correct.md",
+      "sha256": "36301528599ae2324a7b396fce778b5bbcf89e1cd8c588a49f8cbf797aed1543"
     },
     {
       "name": "principle-sequence-verifiable-units",

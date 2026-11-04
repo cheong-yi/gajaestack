@@ -73,8 +73,8 @@ Observed with installed Python and Bun packages on GJC 0.18.7: filtered `candida
 
 Unmodified pstack files from a pinned revision, listed in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). They live in the source checkout and are not shipped in the Python or TypeScript packages. Installing either package does not install the plugin.
 
-- `plugins/practice-role-sets/`: a GJC plugin bundle. `unslop` is one system appendix, so every new session that uses the agent directory where the plugin is enabled gets it once. The executor gets the nine principles, and the critic gets `no-comments`, each as its own agent appendix.
-- `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths. Plugin install does not register them.
+- `plugins/practice-role-sets/`: a GJC plugin bundle. `unslop` is one system appendix, so every new session that uses the agent directory where the plugin is enabled gets it once. The executor gets the nine principles plus `correct`, and the critic gets `no-comments`, each as its own agent appendix. `correct` is the procedure that used to live in the encode-lessons steps. The encode-lessons appendix is now the short live stub.
+- `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths. `skills/create-formal-verification-skill/`, `skills/maintain-formal-verification-skill/`, and `skills/statechart/` are the on-demand TLA set, also with a `HOST.md` note. Plugin install does not register any of these.
 - `overlays/typescript-best-practices.md`: an `AGENTS.md` fragment for TypeScript repos only. Insert it only when that edit is explicitly requested for that repository. See `overlays/README.md`.
 
 Install the plugin into the agent directory that will spawn the session. From a checkout of this repository:
