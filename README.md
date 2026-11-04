@@ -89,7 +89,7 @@ A session that already built its prompt keeps that prompt. A new session, or a n
 
 The loader admits at most 8 KiB per appendix and 32 KiB for every enabled plugin appendix in one render. Another enabled plugin shares that total. An oversize block is dropped, not shortened.
 
-The two verification skills are not in the packages. To invoke them, add this checkout's `skills` directory to `skills.customDirectories` for that agent directory, or copy those two skill directories into that agent directory's skills root. Do not rewrite the skill bodies. Neither step inserts the TypeScript overlay.
+The on-demand skills are not in the packages. That includes the two verification skills and the TLA set (`create-formal-verification-skill`, `maintain-formal-verification-skill`, `statechart`). To invoke one, add this checkout's `skills` directory to `skills.customDirectories` for that agent directory, or copy that skill directory into that agent directory's skills root. Do not rewrite the skill bodies. Neither step inserts the TypeScript overlay. `statechart` stays on disk until someone invokes it.
 
 ## Routing guidance
 
