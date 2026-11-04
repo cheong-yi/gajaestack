@@ -28,6 +28,10 @@ EXECUTOR = (
     "principle-fix-root-causes",
     "correct",
     "principle-sequence-verifiable-units",
+    "principle-attack-the-premise",
+    "principle-build-the-lever",
+    "principle-make-operations-idempotent",
+    "principle-separate-before-serializing-shared-state",
 )
 CRITIC = ("no-comments",)
 SYSTEM = ("unslop",)
@@ -65,6 +69,10 @@ SKILL_BLOBS = {
     "principle-test-behavior-not-implementation": "78c9389bfe707d6d56485ade32c59150958228f9",
     "principle-type-system-discipline": "9fa08b0b17d536ce751fffa90134be8fb03699c7",
     "unslop": "97f5b6412148fa5b2a2fe478836fe8923ffa5cbb",
+    "principle-attack-the-premise": "e9a6d499606992edd9963b80f8f8f57feaccb221",
+    "principle-build-the-lever": "cbf003850489d95fea78e64198fd972c35b1aad3",
+    "principle-make-operations-idempotent": "c93f323d694a4d310515ea27165a093d399bc55e",
+    "principle-separate-before-serializing-shared-state": "ff93b4a2032c08e2232992a9a24f2891ee14e58f",
     "correct": "c45e06f48a0982ae19f92c6e83a8cd05988097a3",
     "create-verification-skill": "140d033a001e8d27acd14b06004506c43053b199",
     "maintain-verification-skill": "a2680b91fead45a0b4963d8c367a854956bea59d",

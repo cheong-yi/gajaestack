@@ -1,6 +1,6 @@
 {
   "name": "practice-role-sets",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "kind": "gajae-code-plugin",
   "system_appendix": [
     {
@@ -69,6 +69,30 @@
       "agent": "executor",
       "path": "appendices/executor/principle-sequence-verifiable-units.md",
       "sha256": "937804c1b8d250eb6dfb966f4f4e7997d345568c32e93ed25c1db3fd33b21821"
+    },
+    {
+      "name": "principle-attack-the-premise",
+      "agent": "executor",
+      "path": "appendices/executor/principle-attack-the-premise.md",
+      "sha256": "8dad3d0b50c91700efcfdf4684d9855defb3f693facb6f87f575f66644397b39"
+    },
+    {
+      "name": "principle-build-the-lever",
+      "agent": "executor",
+      "path": "appendices/executor/principle-build-the-lever.md",
+      "sha256": "177c894df9c8aa43af2d57e6ec476eae73d74d5612500d2bde6ce35086111f6b"
+    },
+    {
+      "name": "principle-make-operations-idempotent",
+      "agent": "executor",
+      "path": "appendices/executor/principle-make-operations-idempotent.md",
+      "sha256": "4d987ee2ff0b5ad4bbfaf067fa5a5d071c99299db3842b19f2f184c76f68eb1e"
+    },
+    {
+      "name": "principle-separate-before-serializing-shared-state",
+      "agent": "executor",
+      "path": "appendices/executor/principle-separate-before-serializing-shared-state.md",
+      "sha256": "b6abc5dbd2460ce89ae725d1532987b4d55666a439d31ffb6d34be87d6b52c31"
     },
     {
       "name": "no-comments",

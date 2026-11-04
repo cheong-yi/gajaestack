@@ -21,6 +21,9 @@ Files refreshed from c742dd61706f
 principle-encode-lessons-in-structure, principle-fix-root-causes,
 principle-test-behavior-not-implementation, principle-subtract-before-you-add,
 principle-model-the-domain, principle-type-system-discipline, unslop, correct,
+principle-attack-the-premise, principle-build-the-lever,
+principle-make-operations-idempotent,
+principle-separate-before-serializing-shared-state,
 create-verification-skill, typescript-best-practices,
 create-formal-verification-skill, maintain-formal-verification-skill,
 in-your-own-words, and the statechart runtime. The statechart test
@@ -47,6 +50,10 @@ Full upstream copies kept for attribution beside the plugin bundle:
   plugins/practice-role-sets/upstream/principle-type-system-discipline.md
   plugins/practice-role-sets/upstream/unslop.md
   plugins/practice-role-sets/upstream/correct.md
+  plugins/practice-role-sets/upstream/principle-attack-the-premise.md
+  plugins/practice-role-sets/upstream/principle-build-the-lever.md
+  plugins/practice-role-sets/upstream/principle-make-operations-idempotent.md
+  plugins/practice-role-sets/upstream/principle-separate-before-serializing-shared-state.md
 
 Plugin appendix body (system, one copy):
   plugins/practice-role-sets/appendices/system/unslop.md
@@ -62,6 +69,10 @@ Plugin appendix bodies (executor):
   plugins/practice-role-sets/appendices/executor/principle-fix-root-causes.md
   plugins/practice-role-sets/appendices/executor/principle-sequence-verifiable-units.md
   plugins/practice-role-sets/appendices/executor/correct.md
+  plugins/practice-role-sets/appendices/executor/principle-attack-the-premise.md
+  plugins/practice-role-sets/appendices/executor/principle-build-the-lever.md
+  plugins/practice-role-sets/appendices/executor/principle-make-operations-idempotent.md
+  plugins/practice-role-sets/appendices/executor/principle-separate-before-serializing-shared-state.md
 
 Plugin appendix bodies (critic):
   plugins/practice-role-sets/appendices/critic/no-comments.md
