@@ -22,7 +22,8 @@ principle-encode-lessons-in-structure, principle-fix-root-causes,
 principle-test-behavior-not-implementation, correct,
 create-verification-skill, typescript-best-practices,
 create-formal-verification-skill, maintain-formal-verification-skill,
-and the statechart runtime. The statechart test corpus is not included.
+in-your-own-words, and the statechart runtime. The statechart test
+corpus is not included.
 Unchanged files remain the September pin above.
 Each upstream source is pstack/skills/<name>/SKILL.md unless stated otherwise.
 Appendix and overlay files hold the upstream body after the frontmatter,
@@ -72,6 +73,7 @@ On-demand skills (full copies):
   skills/create-formal-verification-skill/SKILL.md
   skills/maintain-formal-verification-skill/SKILL.md
   skills/statechart/ (SKILL.md, references/, and scripts/, without scripts/test/)
+  skills/in-your-own-words/SKILL.md
 
 TypeScript AGENTS.md fragment (body after frontmatter) and its full source:
   overlays/typescript-best-practices.md

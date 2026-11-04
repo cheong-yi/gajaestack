@@ -47,6 +47,7 @@ EXCLUDED = (
     "create-formal-verification-skill",
     "maintain-formal-verification-skill",
     "statechart",
+    "in-your-own-words",
 )
 APPENDIX_LIMIT = 8192
 AGENT_TOTAL_LIMIT = 32768
@@ -85,6 +86,7 @@ ON_DEMAND = {
     ),
     "skills/create-formal-verification-skill/SKILL.md": "92f7aa4fa966b857dd7fcc994b3c59650767c878",
     "skills/maintain-formal-verification-skill/SKILL.md": "5d2f7f2228a3b771ca5b03124fc265ddfc53c5fc",
+    "skills/in-your-own-words/SKILL.md": "4b2a476a9017863032c8dba9d12f0a2026943292",
 }
 
 
