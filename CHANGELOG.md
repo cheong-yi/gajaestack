@@ -18,4 +18,4 @@ The six on-demand skills now ship in the Python and TypeScript packages. They st
 
 The source version is `0.1.3`, the same number as the practice-role-sets plugin. The retained `0.1.0` artifact is unchanged.
 
-Seiso no longer checks `plugins/practice-role-sets/`. Those 14 warnings are relative links that resolve in the pstack skill tree. The copies stay byte-for-byte, so the links were not rewritten.
+Links in the two executor principles now point at the principle files in this repo. Names of principles that were not taken are plain text, not links. Seiso checks those files again.

@@ -74,13 +74,13 @@
       "name": "principle-attack-the-premise",
       "agent": "executor",
       "path": "appendices/executor/principle-attack-the-premise.md",
-      "sha256": "8dad3d0b50c91700efcfdf4684d9855defb3f693facb6f87f575f66644397b39"
+      "sha256": "391ce1d54135f04aab61f206bd64badace1c2a10d1ad8654a58d02af4947e7f8"
     },
     {
       "name": "principle-build-the-lever",
       "agent": "executor",
       "path": "appendices/executor/principle-build-the-lever.md",
-      "sha256": "177c894df9c8aa43af2d57e6ec476eae73d74d5612500d2bde6ce35086111f6b"
+      "sha256": "ee551cc4f6c900f90431af15ce56022266f9e4f72c772ef45df0a3d882a525ad"
     },
     {
       "name": "principle-make-operations-idempotent",
