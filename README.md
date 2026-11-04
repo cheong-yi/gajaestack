@@ -19,12 +19,12 @@ bun add --dev --exact --offline --ignore-scripts --backend=copyfile \
 
 Track the reviewed `package.json` and `bun.lock`, consumer `.gajaestack/routing.toml`, and native configuration; keep installed `node_modules/` (or Python `.venv/`) ignored. Save the guide's complete [minimal lint selection](docs/python-trial.md#minimal-typescript-lint-selection), adjusting paths and commands to actual consumer facts without replacing unrelated settings. Installation alone activates nothing: preloads, pytest plugins and skills are independent optional selections. [Install/replay, upgrades and removal](docs/python-trial.md#install-from-local-artifacts-no-registry) remain native package-manager operations.
 
-Routine contributor feedback has one native entrypoint per selected language. Set `TARGET` to the actual contribution target, never an inferred tracking branch:
+Routine contributor feedback has one native entrypoint per selected language. Put the real contribution branch in the flag. Never infer it from the tracking branch, and never save a placeholder into `.gajaestack/routing.toml`:
 
 ```sh
-bun run gajaestack-check --quick --reference-branch "$TARGET"
+bun run gajaestack-check --quick --reference-branch <branch>
 # Python alternative, only when Ruff is selected:
-PYTHONDONTWRITEBYTECODE=1 gajaestack-python-check --reference-branch "$TARGET"
+PYTHONDONTWRITEBYTECODE=1 gajaestack-python-check --reference-branch <branch>
 ```
 
 This lints current whole files with net changes since the target's merge base with HEAD: committed, staged, unstaged and non-ignored untracked work, intersected with declared lint scope. Policy changes can expand scope. It is not changed-line or last-push tracking. [Selectors, defaults and edge cases](docs/python-trial.md#contributor-lint-scope) remain explicit; no checker default changes.
@@ -39,7 +39,7 @@ Read scope and diagnostics, not just exit status: missing selected tools, invali
 
 ## Skills (GJC)
 
-Skill guidance helps agents reason; it does not enforce behavior by itself. The package ships one skill, `native-quality`. GJC 0.18.7 native name filters narrow discovery candidates without a global allowlist. Gajaestack acceptance uses ordinary skill selection and accepts the host limitation that diagnostics may expose excluded skill names and paths; complete model-context isolation is not an acceptance gate.
+Skill guidance helps agents reason; it does not enforce behavior by itself. The packages ship `native-quality` and six on-demand skills: `create-verification-skill`, `maintain-verification-skill`, `create-formal-verification-skill`, `maintain-formal-verification-skill`, `statechart`, and `in-your-own-words`. None of them runs unless someone invokes `/skill:<name>`. If `includeSkills` is set, it must name each skill that should remain a candidate. GJC 0.18.7 native name filters narrow discovery candidates without a global allowlist. Gajaestack acceptance uses ordinary skill selection and accepts the host limitation that diagnostics may expose excluded skill names and paths; complete model-context isolation is not an acceptance gate.
 
 ```yaml
 # .gjc/config.yml — merge into the existing config: preserve current
@@ -74,7 +74,7 @@ Observed with installed Python and Bun packages on GJC 0.18.7: filtered `candida
 Unmodified pstack files from a pinned revision, listed in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES). They live in the source checkout and are not shipped in the Python or TypeScript packages. Installing either package does not install the plugin.
 
 - `plugins/practice-role-sets/`: a GJC plugin bundle. `unslop` is one system appendix, so every new session that uses the agent directory where the plugin is enabled gets it once. The executor gets the principles plus `correct`, and the critic gets `no-comments`, each as its own agent appendix. `correct` is the procedure that used to live in the encode-lessons steps. The encode-lessons appendix is now the short live stub. The four later executor principles are `principle-attack-the-premise`, `principle-build-the-lever`, `principle-make-operations-idempotent`, and `principle-separate-before-serializing-shared-state`.
-- `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths. `skills/create-formal-verification-skill/`, `skills/maintain-formal-verification-skill/`, and `skills/statechart/` are the on-demand TLA set. `skills/in-your-own-words/` is the on-demand restatement skill. Each has a `HOST.md` note. Plugin install does not register any of these.
+- `skills/create-verification-skill/` and `skills/maintain-verification-skill/`: on-demand skills, each with a `HOST.md` note for GJC paths. `skills/create-formal-verification-skill/`, `skills/maintain-formal-verification-skill/`, and `skills/statechart/` are the on-demand TLA set. `skills/in-your-own-words/` is the on-demand restatement skill. Each has a `HOST.md` note. These six ship in the Python and TypeScript packages. Point `skills.customDirectories` at the installed skills root to make them candidates. Plugin install does not register them, and nothing invokes them.
 - `overlays/typescript-best-practices.md`: an `AGENTS.md` fragment for TypeScript repos only. Insert it only when that edit is explicitly requested for that repository. See `overlays/README.md`.
 
 Install the plugin into the agent directory that will spawn the session. From a checkout of this repository:
@@ -119,11 +119,10 @@ seiso check --no-cache  # optional advisory stable rules; no hooks or CI
 The TypeScript checker tests skip without native prerequisites, and a skip is not a pass. For the seeded checker failure regression, run the two seeded cases from `tests/test_typescript_mechanical.py` (type error fails the full check; `debugger` lint fails `--quick`):
 
 ```sh
-GAJAESTACK_BUN="$(command -v bun)" GAJAESTACK_TS_NODE_MODULES=/path/to/node_modules \
-  python3 scripts/check_seeded_regressions.py
+python3 scripts/check_seeded_regressions.py
 ```
 
-The `node_modules` must provide `.bin/tsc` and `.bin/biome`; `git` must be on `PATH`. Exit `0` means both cases ran and passed; `1` means a case failed, errored or skipped (including a seeded fixture being accepted); `2` names each missing prerequisite.
+Unset `GAJAESTACK_BUN` is filled from `bun` on `PATH`. Unset `GAJAESTACK_TS_NODE_MODULES` is the nearest `node_modules` at or above the working directory that has both `.bin/tsc` and `.bin/biome`. An explicit value is used as given and is not replaced. `git` must be on `PATH`. Exit `0` means both cases ran and passed; `1` means a case failed, errored or skipped; `2` names each missing prerequisite. This checks the kit, not the repository a lane is editing.
 
 The source helper `python3 -B -m python.check_python_imports` (source file `python/check_python_imports.py`) checks import discoverability inside a checkout; installed consumers use `gajaestack-imports` instead. It does not install packages, establish version compatibility, prove successful module initialization, or replace running the selected check. Name only imports required by that check; build backends and parser plugins are independent prerequisites.
 

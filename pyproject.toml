@@ -39,4 +39,10 @@ gajaestack = [
 ]
 gajaestack_guidance = [
     "native-quality/SKILL.md",
+    "create-verification-skill/**/*",
+    "maintain-verification-skill/**/*",
+    "create-formal-verification-skill/**/*",
+    "maintain-formal-verification-skill/**/*",
+    "statechart/**/*",
+    "in-your-own-words/**/*",
 ]

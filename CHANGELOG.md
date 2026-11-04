@@ -11,3 +11,7 @@ Seven pstack principles were left out of the plugin on this date. This is a deci
 - `principle-exhaust-the-design-space` says to build prototypes. The GJC prompt says to avoid speculative work.
 - `principle-outcome-oriented-execution` allows a broken middle. The prompt says not to accept a stopgap.
 - `principle-redesign-from-first-principles` fights the smallest-change rule.
+
+The recorded quick command no longer contains the word TARGET. `test_command` remains the completion command. The seeded checker command finds Bun on PATH and a nearby node_modules when those variables are unset. A miss still exits 2. It is a kit check, not a command for every lane.
+
+The six on-demand skills now ship in the Python and TypeScript packages. They still run only when someone invokes them. Package install still does not install the plugin.

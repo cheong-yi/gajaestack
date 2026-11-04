@@ -599,5 +599,14 @@ class CheckRepoTests(unittest.TestCase):
             (root / "package.json").unlink()
             self.assertTrue(any("missing native package version metadata" in e for e in check(root)))
 
+    def test_vendored_pstack_links_are_not_required_to_resolve_here(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            copied = root / "plugins/practice-role-sets/upstream/principle-attack-the-premise.md"
+            copied.parent.mkdir(parents=True)
+            copied.write_text("[other](../principle-laziness-protocol/SKILL.md)\n", encoding="utf-8")
+            self.assertFalse(any("principle-laziness-protocol" in error for error in check(root)))
+
 if __name__ == "__main__":
     unittest.main()

@@ -218,14 +218,14 @@ When the explicit native pytest binding below is active, the configured native t
 The default **suggestion for contributor iteration**, not a changed command default, is an explicit contribution target:
 
 ```sh
-gajaestack-python-check --reference-branch TARGET
-bun run gajaestack-check --quick --reference-branch TARGET
+gajaestack-python-check --reference-branch <branch>
+bun run gajaestack-check --quick --reference-branch <branch>
 # Deliberate alternative: use a specific baseline instead of a merge base.
 gajaestack-python-check --baseline-commit COMMIT
 bun run gajaestack-check --quick --baseline-commit COMMIT
 ```
 
-Replace `TARGET` with the branch being contributed against. A configured tracking branch is not necessarily that target; neither checker guesses one, assumes `origin/main`, fetches, or tracks the last push. The selectors are mutually exclusive. `--reference-branch` resolves the reference to a commit and requires exactly one merge base with HEAD; `--baseline-commit` resolves the supplied commit directly. Unknown or ambiguous references, absent or multiple merge bases, shallow history and non-Git working directories fail explicitly instead of falling back to whole-tree lint.
+Replace `<branch>` with the branch being contributed against. This is a shell command, not a line to save in `.gajaestack/routing.toml`. A configured tracking branch is not necessarily that target; neither checker guesses one, assumes `origin/main`, fetches, or tracks the last push. The selectors are mutually exclusive. `--reference-branch` resolves the reference to a commit and requires exactly one merge base with HEAD; `--baseline-commit` resolves the supplied commit directly. Unknown or ambiguous references, absent or multiple merge bases, shallow history and non-Git working directories fail explicitly instead of falling back to whole-tree lint.
 
 Selection is rooted at the consumer working directory and its declared lint paths/configuration, including when shared code is installed in ignored `site-packages` or `node_modules`. Git's NUL-delimited paths identify current net differences from the baseline plus non-ignored untracked files. Existing supported files are deduplicated and intersected with declared scope; deleted files are not linted, rename destinations are candidates and origins still participate in policy invalidation. Spaces and Unicode are supported. This checks whole current files, not historical contents or only changed lines. Native linter ignore/configuration rules remain authoritative.
 
@@ -333,7 +333,7 @@ Use the consumer's existing local `node_modules/.bin/tsc` and `node_modules/.bin
 
 ### Minimal TypeScript lint selection
 
-For the README quick start, save this complete, schema-valid example as `.gajaestack/routing.toml` in the consumer root. It selects only standalone lint, not a preload, typechecking, tests or skills. Replace paths with existing consumer paths and `TARGET` in the recorded feedback command with the actual contribution target. These are declarations, not a command launcher; preserve unrelated facts when merging into an existing file.
+For the README quick start, save this complete, schema-valid example as `.gajaestack/routing.toml` in the consumer root. It selects only standalone lint, not a preload, typechecking, tests or skills. Replace paths with existing consumer paths. `test_command` is the completion command. `affected_test_command` is the quick edit-loop command and has no branch in it. Pass `--reference-branch` on the shell only when the contribution branch is known. Do not write the word TARGET into this file.
 
 ```toml
 required = ["ts-lint"]
@@ -350,7 +350,7 @@ external_commands = "Changed subprocess or executable invocation: test arguments
 schema_version = 1
 selected_components = ["typescript"]
 test_command = "bun run gajaestack-check"
-affected_test_command = "bun run gajaestack-check --quick --reference-branch TARGET"
+affected_test_command = "bun run gajaestack-check --quick"
 ci_jobs_added = false
 pcd_is_enforcement = false
 

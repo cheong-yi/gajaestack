@@ -20,9 +20,18 @@ REQUIRED_FRONTMATTER = {
 }
 # Vendored upstream pstack skills keep their upstream frontmatter byte for byte
 # (tests/test_practice_role_sets.py), so only the host-required fields apply.
-VENDORED_SKILLS = {"create-verification-skill", "maintain-verification-skill"}
+VENDORED_SKILLS = {
+    "create-verification-skill",
+    "maintain-verification-skill",
+    "create-formal-verification-skill",
+    "maintain-formal-verification-skill",
+    "statechart",
+    "in-your-own-words",
+}
 VENDORED_FRONTMATTER = {"name", "description"}
 IGNORED_DIRS = {".git", ".gjc", "__pycache__"}
+# Upstream copies keep relative links that resolve in the pstack tree, not here.
+LINK_CHECK_SKIP = ("plugins/practice-role-sets/",)
 
 # Routing facts validation lives in the installed ``gajaestack.routing`` module
 # (python/routing.py in a checkout); load it from source so this checker works
@@ -132,6 +141,9 @@ def check(root: Path) -> list[str]:
 
     errors: list[str] = []
     for markdown_file in markdown_files(root):
+        relative = markdown_file.relative_to(root).as_posix()
+        if relative.startswith(LINK_CHECK_SKIP):
+            continue
         errors.extend(link_errors(root, markdown_file))
     for skill_file in sorted((root / "skills").glob("*/SKILL.md")):
         errors.extend(skill_errors(skill_file))

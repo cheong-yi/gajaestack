@@ -2,7 +2,5 @@ include package.json
 include AGENTS.md
 graft docs
 graft skills
-prune skills/create-verification-skill
-prune skills/maintain-verification-skill
 prune tests
 global-exclude *.py[cod]

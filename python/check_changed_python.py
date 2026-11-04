@@ -13,7 +13,7 @@ Usage in a consumer checkout with the installed ``gajaestack`` package::
         [--facts PATH] [--timing]
 
     # contributor lint: explicit contribution target, or deliberate baseline
-    gajaestack-python-check --reference-branch TARGET
+    gajaestack-python-check --reference-branch <branch>
     gajaestack-python-check --baseline-commit COMMIT
 
 Contributor selectors are mutually exclusive and cannot accompany ``--full``.

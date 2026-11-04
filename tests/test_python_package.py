@@ -18,6 +18,19 @@ WHEELHOUSE = os.environ.get("GAJAESTACK_PYTHON_WHEELHOUSE")
 GJC = os.environ.get("GAJAESTACK_GJC")
 
 LICENSE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES")
+SHIPPED_SKILLS = (
+    "native-quality",
+    "create-verification-skill",
+    "maintain-verification-skill",
+    "create-formal-verification-skill",
+    "maintain-formal-verification-skill",
+    "statechart",
+    "in-your-own-words",
+)
+
+
+def shipped_skill_paths(skill_root: Path) -> set[Path]:
+    return {skill_root / name / "SKILL.md" for name in SHIPPED_SKILLS}
 
 
 @unittest.skipUnless(
@@ -178,8 +191,13 @@ class PythonPackageTests(unittest.TestCase):
             "gajaestack/test_percent_decoder_properties.py",
         ):
             self.assertIn(name, names)
-        self.assertEqual(sum(name.endswith("SKILL.md") for name in names), 3)
-        self.assertFalse(any(name.endswith(".ts") for name in names))
+        self.assertEqual(
+            sum(name.endswith("SKILL.md") for name in names), len(SHIPPED_SKILLS)
+        )
+        self.assertTrue(
+            any(name.endswith("statechart/scripts/run.ts") for name in names)
+        )
+        self.assertFalse(any(name.endswith("typescript/check.ts") for name in names))
 
     def test_clean_hash_pinned_install_upgrade_and_removal_without_bun(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -375,7 +393,7 @@ class PythonPackageTests(unittest.TestCase):
                     for item in candidates
                     if str(skill_root) in item["path"]
                 }
-                self.assertEqual(kit_paths, {skill_root / "native-quality/SKILL.md"})
+                self.assertEqual(kit_paths, shipped_skill_paths(skill_root))
                 self.assertTrue(
                     any(
                         item["path"].endswith(".gjc/skills/consumer-notes/SKILL.md")
@@ -460,7 +478,7 @@ class PythonPackageTests(unittest.TestCase):
                         if str(skill_root) in item["path"]
                     }
                     self.assertEqual(
-                        reobserved_kit_paths, {skill_root / "native-quality/SKILL.md"}
+                        reobserved_kit_paths, shipped_skill_paths(skill_root)
                     )
                     reobserved_selected = next(
                         item
