@@ -1,5 +1,7 @@
 # Advisory repository documentation check; no hooks or CI integration.
 # Stable rules only. Keep findings visible; do not suppress rules to clear them.
+# plugins/practice-role-sets is the exception: those files are pinned upstream
+# copies, and their links resolve in the pstack skill tree, not in this layout.
 include = ["**/*.md"]
 exclude = [
   ".git/**",
@@ -16,6 +18,7 @@ exclude = [
   "**/build/**",
   "**/dist/**",
   "**/generated/**",
+  "plugins/practice-role-sets/**",
 ]
 preview = false
 

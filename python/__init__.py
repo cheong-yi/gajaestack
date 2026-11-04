@@ -5,4 +5,4 @@ setuptools dynamic version; the root ``package.json`` carries an equal mirror
 enforced by the repository checker.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.3"

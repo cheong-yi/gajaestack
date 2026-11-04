@@ -1,6 +1,6 @@
 {
   "name": "gajaestack",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Selective consumer-rooted native quality checks and agent guidance",
   "license": "MIT",
   "type": "module",

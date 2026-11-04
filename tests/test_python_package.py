@@ -242,7 +242,7 @@ class PythonPackageTests(unittest.TestCase):
                 root,
                 env,
             )
-            self.assertEqual(probe.stdout.strip(), "0.1.0")
+            self.assertEqual(probe.stdout.strip(), "0.1.3")
             self.run_command(
                 [str(venv / "bin/gajaestack-imports"), "tomllib"], root, env
             )
@@ -415,7 +415,7 @@ class PythonPackageTests(unittest.TestCase):
                 )
             try:
                 version_file.write_text(
-                    original.replace("0.1.0", "0.1.1")
+                    original.replace("0.1.3", "0.1.4")
                     + '\nUPGRADE_MARKER = "distinct-local-release"\n'
                 )
                 skill_file.write_text(
@@ -424,7 +424,7 @@ class PythonPackageTests(unittest.TestCase):
                 )
                 manifest = self.stage / "package.json"
                 document = json.loads(manifest.read_text())
-                document["version"] = "0.1.1"
+                document["version"] = "0.1.4"
                 manifest.write_text(json.dumps(document))
                 self.run_command(
                     [
@@ -442,7 +442,7 @@ class PythonPackageTests(unittest.TestCase):
                     ],
                     root,
                 )
-                upgraded = next(self.dist.glob("gajaestack-0.1.1-*.whl"))
+                upgraded = next(self.dist.glob("gajaestack-0.1.4-*.whl"))
                 self.assertNotEqual(upgraded.read_bytes(), self.wheel.read_bytes())
                 lock.write_text(
                     f"gajaestack @ {upgraded.as_uri()} --hash=sha256:{hashlib.sha256(upgraded.read_bytes()).hexdigest()}\n"
@@ -458,7 +458,7 @@ class PythonPackageTests(unittest.TestCase):
                     root,
                     env,
                 )
-                self.assertEqual(result.stdout.strip(), "0.1.1 distinct-local-release")
+                self.assertEqual(result.stdout.strip(), "0.1.4 distinct-local-release")
                 self.assertIn(
                     "distinct-guidance-release",
                     (skill_root / "native-quality/SKILL.md").read_text(),
