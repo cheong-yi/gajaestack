@@ -58,13 +58,13 @@ SKILL_BLOBS = {
     "principle-boundary-discipline": "dfe9a6fb0e5acd6ae43a41437ee0951adfe839cb",
     "principle-encode-lessons-in-structure": "4a96f77fe70e36cb030f9c5efa142f66877bf58a",
     "principle-fix-root-causes": "14fc189fa1ec3fb1614b0a3c75557f92943d8f13",
-    "principle-model-the-domain": "e1d664a19243c90a84e5e7a816e9e05146c88720",
+    "principle-model-the-domain": "09b7c739955facf03f08f66e1e329745d2f8880e",
     "principle-prove-it-works": "5dc14a3b06f9d579e5c17cd8a7242f432ddb3125",
     "principle-sequence-verifiable-units": "986371260ebccd9a5a6818c9561e88c1d270d0ee",
-    "principle-subtract-before-you-add": "d28770cf47a5798d0250a25ad494aedfecad154e",
+    "principle-subtract-before-you-add": "b8740ba6f06922d8e7ef3b23f9fb16e0fc4a876f",
     "principle-test-behavior-not-implementation": "78c9389bfe707d6d56485ade32c59150958228f9",
-    "principle-type-system-discipline": "6030f171bee0d1902cf7ca91f06225e09f0f5433",
-    "unslop": "229a090708710c36caa0017f8d33e90880dc6846",
+    "principle-type-system-discipline": "9fa08b0b17d536ce751fffa90134be8fb03699c7",
+    "unslop": "97f5b6412148fa5b2a2fe478836fe8923ffa5cbb",
     "correct": "c45e06f48a0982ae19f92c6e83a8cd05988097a3",
     "create-verification-skill": "140d033a001e8d27acd14b06004506c43053b199",
     "maintain-verification-skill": "a2680b91fead45a0b4963d8c367a854956bea59d",
@@ -192,7 +192,10 @@ class PracticeRoleSetTests(unittest.TestCase):
                 source = pinned_source(
                     PLUGIN / "upstream" / f"{entry['name']}.md", entry["name"]
                 )
-                self.assertEqual(appendix, body_after_frontmatter(source))
+                expected = body_after_frontmatter(source)
+                if entry["name"] == "principle-type-system-discipline":
+                    expected = expected + b"\nDo not lie to the compiler.\n"
+                self.assertEqual(appendix, expected)
                 self.assertEqual(entry["sha256"], hashlib.sha256(appendix).hexdigest())
 
     def test_rendered_appendices_fit_the_shared_cap(self) -> None:

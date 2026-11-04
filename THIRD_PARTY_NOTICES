@@ -19,15 +19,20 @@ Vendored pstack files, copied from pinned revision
 Files refreshed from c742dd61706f
 (https://github.com/cursor/plugins/tree/c742dd61706f/pstack) are
 principle-encode-lessons-in-structure, principle-fix-root-causes,
-principle-test-behavior-not-implementation, correct,
+principle-test-behavior-not-implementation, principle-subtract-before-you-add,
+principle-model-the-domain, principle-type-system-discipline, unslop, correct,
 create-verification-skill, typescript-best-practices,
 create-formal-verification-skill, maintain-formal-verification-skill,
 in-your-own-words, and the statechart runtime. The statechart test
 corpus is not included.
+Her later trims are taken as she wrote them. The type-system appendix
+keeps one added line, "Do not lie to the compiler." Its upstream copy
+does not include that line.
 Unchanged files remain the September pin above.
 Each upstream source is pstack/skills/<name>/SKILL.md unless stated otherwise.
 Appendix and overlay files hold the upstream body after the frontmatter,
-byte for byte; every other file is a full unmodified copy.
+byte for byte, except that one type-system line. Every other file is a
+full unmodified copy.
 
 Full upstream copies kept for attribution beside the plugin bundle:
   plugins/practice-role-sets/upstream/no-comments.md

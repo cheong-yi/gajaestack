@@ -1,12 +1,12 @@
 {
   "name": "practice-role-sets",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "kind": "gajae-code-plugin",
   "system_appendix": [
     {
       "name": "unslop",
       "path": "appendices/system/unslop.md",
-      "sha256": "a71c9bdf6ca3b61e1c748e45d44d0267e802c8cb94e84828bc037bf79a658c88"
+      "sha256": "4398ebd335a9da1ff7e557196f58142d72b4fa3b1377dea59fb735894030565e"
     }
   ],
   "agent-appendix": [
@@ -14,13 +14,13 @@
       "name": "principle-subtract-before-you-add",
       "agent": "executor",
       "path": "appendices/executor/principle-subtract-before-you-add.md",
-      "sha256": "78701d2a0e7bcec6629c6678668daf0687c7f38e61baaf3dbf41953b0ab88e8a"
+      "sha256": "53aafbbbe87171b8d712d9cf52b5a8af1c7ac9bfb49f6a18e912195de447aa27"
     },
     {
       "name": "principle-model-the-domain",
       "agent": "executor",
       "path": "appendices/executor/principle-model-the-domain.md",
-      "sha256": "dd71750e4077a84bc4e081dcf72b960a8ab37efab99ea214dd5847ff39f09aa6"
+      "sha256": "43b4e8ad97cc0de0f070adeb2e333fa9a9d02783796b9bb9bc0d92361f18df4f"
     },
     {
       "name": "principle-boundary-discipline",
@@ -32,7 +32,7 @@
       "name": "principle-type-system-discipline",
       "agent": "executor",
       "path": "appendices/executor/principle-type-system-discipline.md",
-      "sha256": "ddfb8d9c750a78dd429a3eef5cf3289a0bddcdc028fcd2e1bf29ea93a12b1b3a"
+      "sha256": "91bf3a8732118438c8e9fcc3b069040fc17a5ba9061c1cb6f24cf0fe5ab6187e"
     },
     {
       "name": "principle-test-behavior-not-implementation",
