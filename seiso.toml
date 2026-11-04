@@ -27,6 +27,10 @@ path = "README.md"
 kind = "readme"
 
 [[kinds]]
+path = "CHANGELOG.md"
+kind = "reference"
+
+[[kinds]]
 path = "AGENTS.md"
 kind = "howto"
 
