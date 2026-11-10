@@ -695,6 +695,10 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
         self.assertIsNotNone(lint, text)
         self.assertEqual(int(lint.group(1)), 1, text)
         self.assertNotIn("Typecheck:", text)
+        self.assertIn(
+            "Lint only. Typecheck did not run. Warnings are not a behavior result.",
+            text,
+        )
         self.assertNotIn("Quick scope expanded", text)
         self.assertEqual(
             index_state,
@@ -711,6 +715,10 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
         self.assertEqual(process.returncode, 0, text)
         self.assertIn("No changed files; nothing to check.", text)
         self.assertIn("No coverage; this no-op is not a lint pass.", text)
+        self.assertIn(
+            "Committed work on another branch is not visible to plain --quick, so pass --reference-branch with the known contribution branch.",
+            text,
+        )
         self.assertNotIn("Quick scope expanded", text)
         self.assertNotIn("Lint:", text)
         self.assertNotIn("Typecheck:", text)
@@ -728,6 +736,7 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
             "No changed files match the selected lint paths; nothing to check.", text
         )
         self.assertIn("No coverage; this no-op is not a lint pass.", text)
+        self.assertNotIn("reference-branch", text)
         self.assertNotIn("Quick scope expanded", text)
         self.assertNotIn("Lint:", text)
 
@@ -922,6 +931,10 @@ class TypeScriptCheckEntryTests(NativeConsumerTestCase):
         self.assertEqual(before, after, "timing runs must not write files")
         self.assertIn("Typecheck:", process.stdout)
         self.assertIn("Lint: 2 selected source files", process.stdout)
+        self.assertIn(
+            "Typecheck and lint finished. Warnings are not a behavior result.",
+            process.stdout,
+        )
         self.assertNotIn("gajaestack timing:", process.stdout)
         self.assertRegex(
             process.stderr,

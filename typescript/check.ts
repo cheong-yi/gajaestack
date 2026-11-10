@@ -704,6 +704,10 @@ async function runChecks(
 									? "No changed files match the selected lint paths; nothing to check."
 									: "No changed files; nothing to check.",
 							);
+							if (!contribution && changes.paths.length === 0)
+								console.log(
+									"Committed work on another branch is not visible to plain --quick, so pass --reference-branch with the known contribution branch.",
+								);
 							console.log("No coverage; this no-op is not a lint pass.");
 							return 0;
 						}
@@ -732,6 +736,11 @@ async function runChecks(
 				]);
 				reportPhase(timing, "lint", files.length, status, phase);
 				if (status !== 0) return status;
+				console.log(
+					options.typecheck && !quick
+						? "Typecheck and lint finished. Warnings are not a behavior result."
+						: "Lint only. Typecheck did not run. Warnings are not a behavior result.",
+				);
 			} catch (error) {
 				if (!scoped)
 					reportPhase(timing, "lint-scope", null, failureStatus(error), scope);
