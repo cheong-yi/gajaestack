@@ -1,6 +1,6 @@
 {
   "name": "practice-role-sets",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "kind": "gajae-code-plugin",
   "system_appendix": [
     {
@@ -100,10 +100,16 @@
       "sha256": "6d51f3a675a01444e6f7aac18403801bae2e9da721ddb9562aaec46a2ff1016d"
     },
     {
-      "name": "no-comments",
-      "agent": "critic",
-      "path": "appendices/critic/no-comments.md",
-      "sha256": "075e8ead8160dbd6c15680eec5f86ff0bbb47f374d1a587590d70f3f06faa1d6"
+      "name": "principle-explain-the-number",
+      "agent": "executor",
+      "path": "appendices/executor/principle-explain-the-number.md",
+      "sha256": "f94c0fa10e2498ecb22f1742049272684add5e16567c059f40668a0625714e4e"
+    },
+    {
+      "name": "principle-minimize-reader-load",
+      "agent": "executor",
+      "path": "appendices/executor/principle-minimize-reader-load.md",
+      "sha256": "5bfe98f111d926e1bd86c8adc93f099246b0a7146999de0f27a09d46b87a0046"
     }
   ]
 }

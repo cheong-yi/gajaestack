@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-11-25
+
+The vendored pstack files are refreshed to `005d8f6e8ec0`. The plugin is `0.1.5`. The executor now also gets `principle-explain-the-number` and `principle-minimize-reader-load`. That reverses the 2026-11-04 call on minimize-reader-load. The explain-the-number appendix names the benchmark-checklist skill instead of linking to it.
+
+`no-comments` is no longer a critic appendix. The critic's tool list has no `task` or edit tool, so it could not spawn Comment Sicko or apply fixes. It is now the on-demand skill `skills/no-comments/`, without the sentence that pointed at poteto-mode, and its `comment-sicko` agent sits beside it. `blast-radius`, `tdd`, and `benchmark-checklist` are new on-demand skills. These four live only in the checkout, not in the packages. `interrogate` and `arena` are not taken.
+
 ## 2026-11-06
 
 Loc-polsia is now a required system appendix in `plugins/practice-role-sets`. A new session that has that plugin enabled receives the short kernel that fits the loader cap. The longer projection does not fit unless an existing appendix is removed, and the loader drops overflow instead of shortening it. The text does not enforce itself. Package install still does not install the plugin, and the Python and TypeScript packages stay at `0.1.3`. The plugin version is `0.1.4` because its contents changed. The retained `0.1.0` artifact is unchanged. Issue #1 still records the older selectable-components rule. This checkout does not edit that issue.

@@ -39,18 +39,27 @@ principle-sequence-verifiable-units,
 principle-test-behavior-not-implementation,
 principle-type-system-discipline, unslop, and the statechart runtime,
 which now includes scripts/kill.ts and scripts/janitor.ts.
+Files added from 005d8f6e8ec0 are principle-explain-the-number,
+principle-minimize-reader-load, blast-radius, tdd, benchmark-checklist,
+and agents/comment-sicko.md. No-comments moved from the critic appendix to
+the on-demand skill skills/no-comments/SKILL.md. That copy drops one
+sentence, "Pick each subagent's reasoning level for the job, per the
+Subagents section of the **poteto-mode** skill." The explain-the-number
+appendix names the **benchmark-checklist** skill in place of upstream's
+relative link to it.
 Her later trims are taken as she wrote them. The type-system appendix
 keeps one added line, "Do not lie to the compiler." Its upstream copy
 does not include that line.
 Unchanged files remain the September pin above.
 Each upstream source is pstack/skills/<name>/SKILL.md unless stated otherwise.
 Appendix and overlay files hold the upstream body after the frontmatter,
-byte for byte, except that one type-system line. Every other listed pstack
-file is a full unmodified copy. `appendices/system/loc-polsia.md` is not in
+byte for byte, except that type-system line and that explain-the-number
+link. Every other listed pstack
+file is a full unmodified copy, except skills/no-comments/SKILL.md as
+noted above. `appendices/system/loc-polsia.md` is not in
 this notice. It is a first-party gajaestack appendix.
 
 Full upstream copies kept for attribution beside the plugin bundle:
-  plugins/practice-role-sets/upstream/no-comments.md
   plugins/practice-role-sets/upstream/principle-boundary-discipline.md
   plugins/practice-role-sets/upstream/principle-encode-lessons-in-structure.md
   plugins/practice-role-sets/upstream/principle-fix-root-causes.md
@@ -66,6 +75,8 @@ Full upstream copies kept for attribution beside the plugin bundle:
   plugins/practice-role-sets/upstream/principle-build-the-lever.md
   plugins/practice-role-sets/upstream/principle-make-operations-idempotent.md
   plugins/practice-role-sets/upstream/principle-separate-before-serializing-shared-state.md
+  plugins/practice-role-sets/upstream/principle-explain-the-number.md
+  plugins/practice-role-sets/upstream/principle-minimize-reader-load.md
 
 Plugin appendix body (system, pstack copy):
   plugins/practice-role-sets/appendices/system/unslop.md
@@ -85,9 +96,8 @@ Plugin appendix bodies (executor):
   plugins/practice-role-sets/appendices/executor/principle-build-the-lever.md
   plugins/practice-role-sets/appendices/executor/principle-make-operations-idempotent.md
   plugins/practice-role-sets/appendices/executor/principle-separate-before-serializing-shared-state.md
-
-Plugin appendix bodies (critic):
-  plugins/practice-role-sets/appendices/critic/no-comments.md
+  plugins/practice-role-sets/appendices/executor/principle-explain-the-number.md
+  plugins/practice-role-sets/appendices/executor/principle-minimize-reader-load.md
 
 On-demand skills (full copies):
   skills/create-verification-skill/SKILL.md
@@ -102,6 +112,14 @@ On-demand skills (full copies):
   skills/maintain-formal-verification-skill/SKILL.md
   skills/statechart/ (SKILL.md, references/, and scripts/, without scripts/test/)
   skills/in-your-own-words/SKILL.md
+  skills/blast-radius/SKILL.md
+  skills/tdd/SKILL.md
+  skills/benchmark-checklist/SKILL.md
+  skills/no-comments/comment-sicko.md
+    (source: pstack/agents/comment-sicko.md)
+
+On-demand skill with one local edit, noted above:
+  skills/no-comments/SKILL.md
 
 TypeScript AGENTS.md fragment (body after frontmatter) and its full source:
   overlays/typescript-best-practices.md

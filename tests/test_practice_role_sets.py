@@ -3,7 +3,8 @@
 Each full copy is anchored to its git blob id. Unchanged files still match
 revision 12d587dfb20741cafc376c42c696c5f6e2a64487. Files refreshed from
 c742dd61706f or 005d8f6e8ec0 use that revision's blob id. Derived bodies are compared with
-the anchored full copy, so the test needs no network.
+the anchored full copy, so the test needs no network. LOCAL_EDITS lists the
+few files changed here on purpose, each with its pinned upstream blob.
 """
 
 from __future__ import annotations
@@ -32,11 +33,12 @@ EXECUTOR = (
     "principle-build-the-lever",
     "principle-make-operations-idempotent",
     "principle-separate-before-serializing-shared-state",
+    "principle-explain-the-number",
+    "principle-minimize-reader-load",
 )
-CRITIC = ("no-comments",)
 SYSTEM = ("unslop",)
 OWNED_SYSTEM = ("loc-polsia",)
-AGREED = {"executor": EXECUTOR, "critic": CRITIC}
+AGREED = {"executor": EXECUTOR}
 EXCLUDED = (
     "architect",
     "planner",
@@ -74,6 +76,8 @@ SKILL_BLOBS = {
     "principle-build-the-lever": "8f9b5a931b10839ad5ef71ce43d5411c2c7a1f6b",
     "principle-make-operations-idempotent": "7c61fe4b203bfae1de7db570af4c57fd0ba0a3d3",
     "principle-separate-before-serializing-shared-state": "6a4c3b876b694097a12003996588f557d2b55d0e",
+    "principle-explain-the-number": "7ff00fcf8805872cfb500308ed2bdf5fdd5d6b8b",
+    "principle-minimize-reader-load": "19dd4876d6e92c04caa2729d37ac87ac126d20ed",
     "correct": "c45e06f48a0982ae19f92c6e83a8cd05988097a3",
     "create-verification-skill": "140d033a001e8d27acd14b06004506c43053b199",
     "maintain-verification-skill": "a2680b91fead45a0b4963d8c367a854956bea59d",
@@ -96,6 +100,28 @@ ON_DEMAND = {
     "skills/create-formal-verification-skill/SKILL.md": "92f7aa4fa966b857dd7fcc994b3c59650767c878",
     "skills/maintain-formal-verification-skill/SKILL.md": "5d2f7f2228a3b771ca5b03124fc265ddfc53c5fc",
     "skills/in-your-own-words/SKILL.md": "4b2a476a9017863032c8dba9d12f0a2026943292",
+    "skills/blast-radius/SKILL.md": "1f5c95140597b8aa42fadf165e1aa0bca01639ff",
+    "skills/tdd/SKILL.md": "ca6f24c963001d9d518db2936dfe3d12f29b4e94",
+    "skills/benchmark-checklist/SKILL.md": "88546fa684c003625a13d61b975ced97b8fcb90e",
+    "skills/no-comments/comment-sicko.md": "14c2402f3d8c81b39d75747d6eb892f343e6a903",
+}
+
+# Files edited here on purpose: path -> (upstream blob, local blob, text removed).
+LOCAL_EDITS = {
+    "skills/no-comments/SKILL.md": (
+        "1789564454c627cb8d4ee8580822d7e368cef122",
+        "6be56945b0b494e877c68ec7d7d5f5ba028c7731",
+        "Pick each subagent's reasoning level for the job, per the Subagents "
+        "section of the **poteto-mode** skill.",
+    ),
+}
+# Appendix bodies that differ from the upstream body after the frontmatter.
+BODY_EDITS = {
+    "principle-type-system-discipline": (b"", b"\nDo not lie to the compiler.\n"),
+    "principle-explain-the-number": (
+        b"[benchmark-checklist](../benchmark-checklist/SKILL.md) skill",
+        b"**benchmark-checklist** skill",
+    ),
 }
 
 
@@ -167,12 +193,12 @@ class PracticeRoleSetTests(unittest.TestCase):
         )
         system = document["system_appendix"]
         self.assertEqual([entry["name"] for entry in system], list(SYSTEM + OWNED_SYSTEM))
-        self.assertEqual(document["version"], "0.1.4")
+        self.assertEqual(document["version"], "0.1.5")
         for entry in system:
             self.assertNotIn("agent", entry)
             self.assertNotIn("content", entry)
             self.assertEqual(entry["path"], f"appendices/system/{entry['name']}.md")
-        declared: dict[str, list[str]] = {"executor": [], "critic": []}
+        declared: dict[str, list[str]] = {agent: [] for agent in AGREED}
         for entry in document["agent-appendix"]:
             self.assertIn(entry["agent"], declared, entry)
             self.assertNotIn("content", entry)
@@ -193,7 +219,7 @@ class PracticeRoleSetTests(unittest.TestCase):
         upstream_files = {path.name for path in (PLUGIN / "upstream").iterdir()}
         self.assertEqual(
             upstream_files,
-            {f"{name}.md" for name in set(EXECUTOR) | set(CRITIC) | set(SYSTEM)},
+            {f"{name}.md" for name in set(EXECUTOR) | set(SYSTEM)},
         )
 
     def test_appendix_bodies_match_upstream_after_frontmatter(self) -> None:
@@ -213,8 +239,13 @@ class PracticeRoleSetTests(unittest.TestCase):
                     PLUGIN / "upstream" / f"{entry['name']}.md", entry["name"]
                 )
                 expected = body_after_frontmatter(source)
-                if entry["name"] == "principle-type-system-discipline":
-                    expected = expected + b"\nDo not lie to the compiler.\n"
+                if entry["name"] in BODY_EDITS:
+                    old, new = BODY_EDITS[entry["name"]]
+                    if old:
+                        self.assertEqual(expected.count(old), 1)
+                        expected = expected.replace(old, new)
+                    else:
+                        expected = expected + new
                 self.assertEqual(appendix, expected)
 
     def test_rendered_appendices_fit_the_shared_cap(self) -> None:
@@ -243,7 +274,7 @@ class PracticeRoleSetTests(unittest.TestCase):
             self.assertLess(size, APPENDIX_LIMIT, entry["path"])
             total += size
         self.assertLess(total, AGENT_TOTAL_LIMIT)
-        self.assertGreater(total, 20_000)
+        self.assertGreater(total, 19_000)
 
     def test_no_excluded_skill_in_plugin_directory(self) -> None:
         for path in PLUGIN.rglob("*"):
@@ -259,6 +290,14 @@ class PracticeRoleSetTests(unittest.TestCase):
         for relative, blob in ON_DEMAND.items():
             with self.subTest(path=relative):
                 self.assertEqual(git_blob_id((KIT_ROOT / relative).read_bytes()), blob)
+
+    def test_local_edits_are_pinned_and_remove_only_their_text(self) -> None:
+        for relative, (_upstream, local, removed) in LOCAL_EDITS.items():
+            with self.subTest(path=relative):
+                data = (KIT_ROOT / relative).read_bytes()
+                self.assertEqual(git_blob_id(data), local)
+                self.assertNotIn(removed.encode(), data)
+                self.assertNotIn(b"poteto-mode", data)
 
     def test_statechart_runtime_matches_upstream_and_omits_the_corpus(self) -> None:
         root = KIT_ROOT / "skills/statechart"

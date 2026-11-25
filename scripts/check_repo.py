@@ -27,6 +27,10 @@ VENDORED_SKILLS = {
     "maintain-formal-verification-skill",
     "statechart",
     "in-your-own-words",
+    "blast-radius",
+    "tdd",
+    "benchmark-checklist",
+    "no-comments",
 }
 VENDORED_FRONTMATTER = {"name", "description"}
 IGNORED_DIRS = {".git", ".gjc", "__pycache__"}

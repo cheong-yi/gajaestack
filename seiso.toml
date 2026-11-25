@@ -78,3 +78,8 @@ kind = "reference"
 [[kinds]]
 path = "skills/statechart/references/**"
 kind = "reference"
+
+# Vendored pstack agent definition, kept byte for byte.
+[[kinds]]
+path = "skills/no-comments/comment-sicko.md"
+kind = "reference"
