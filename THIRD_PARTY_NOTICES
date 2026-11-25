@@ -34,8 +34,9 @@ does not include that line.
 Unchanged files remain the September pin above.
 Each upstream source is pstack/skills/<name>/SKILL.md unless stated otherwise.
 Appendix and overlay files hold the upstream body after the frontmatter,
-byte for byte, except that one type-system line. Every other file is a
-full unmodified copy.
+byte for byte, except that one type-system line. Every other listed pstack
+file is a full unmodified copy. `appendices/system/loc-polsia.md` is not in
+this notice. It is a first-party gajaestack appendix.
 
 Full upstream copies kept for attribution beside the plugin bundle:
   plugins/practice-role-sets/upstream/no-comments.md
@@ -55,7 +56,7 @@ Full upstream copies kept for attribution beside the plugin bundle:
   plugins/practice-role-sets/upstream/principle-make-operations-idempotent.md
   plugins/practice-role-sets/upstream/principle-separate-before-serializing-shared-state.md
 
-Plugin appendix body (system, one copy):
+Plugin appendix body (system, pstack copy):
   plugins/practice-role-sets/appendices/system/unslop.md
 
 Plugin appendix bodies (executor):

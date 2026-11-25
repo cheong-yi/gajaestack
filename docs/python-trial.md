@@ -1,6 +1,6 @@
 # Selectable native quality checks
 
-Two native packages built from one source serve Python and TypeScript: the `gajaestack` wheel and Bun tarball. The source version is `0.1.3`, the same number as the practice-role-sets plugin. The retained release artifact is still `0.1.0` until a new build is reviewed and kept. Reuse consumer tools, configs, tests and domain oracles; this is not a runner, installer framework or adoption grant. RERG and Gajaeway source/configuration remain unchanged by this kit increment. There is no adoption or ownership CLI: native installation writes dependency directories and locks, not consumer facts or check configuration.
+Two native packages built from one source serve Python and TypeScript: the `gajaestack` wheel and Bun tarball. The package version is `0.1.3`. The practice-role-sets plugin is `0.1.4` because it now carries the loc-polsia system appendix. The retained release artifact is still `0.1.0` until a new build is reviewed and kept. Reuse consumer tools, configs, tests and domain oracles; this is not a runner, installer framework or adoption grant. RERG and Gajaeway source/configuration remain unchanged by this kit increment. There is no adoption or ownership CLI: native installation writes dependency directories and locks, not consumer facts or check configuration.
 
 ## The five-step journey
 

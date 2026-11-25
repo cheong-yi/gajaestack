@@ -35,6 +35,7 @@ EXECUTOR = (
 )
 CRITIC = ("no-comments",)
 SYSTEM = ("unslop",)
+OWNED_SYSTEM = ("loc-polsia",)
 AGREED = {"executor": EXECUTOR, "critic": CRITIC}
 EXCLUDED = (
     "architect",
@@ -163,7 +164,8 @@ class PracticeRoleSetTests(unittest.TestCase):
             set(document), {"name", "version", "kind", "system_appendix", "agent-appendix"}
         )
         system = document["system_appendix"]
-        self.assertEqual([entry["name"] for entry in system], list(SYSTEM))
+        self.assertEqual([entry["name"] for entry in system], list(SYSTEM + OWNED_SYSTEM))
+        self.assertEqual(document["version"], "0.1.4")
         for entry in system:
             self.assertNotIn("agent", entry)
             self.assertNotIn("content", entry)
@@ -197,6 +199,14 @@ class PracticeRoleSetTests(unittest.TestCase):
         for entry in document["system_appendix"] + document["agent-appendix"]:
             with self.subTest(name=entry["name"], agent=entry.get("agent", "system")):
                 appendix = (PLUGIN / entry["path"]).read_bytes()
+                self.assertEqual(entry["sha256"], hashlib.sha256(appendix).hexdigest())
+                if entry["name"] in OWNED_SYSTEM:
+                    self.assertNotIn(
+                        f"{entry['name']}.md",
+                        {path.name for path in (PLUGIN / "upstream").iterdir()},
+                    )
+                    self.assertIn(b"Canonical doctrine:", appendix)
+                    continue
                 source = pinned_source(
                     PLUGIN / "upstream" / f"{entry['name']}.md", entry["name"]
                 )
@@ -204,7 +214,6 @@ class PracticeRoleSetTests(unittest.TestCase):
                 if entry["name"] == "principle-type-system-discipline":
                     expected = expected + b"\nDo not lie to the compiler.\n"
                 self.assertEqual(appendix, expected)
-                self.assertEqual(entry["sha256"], hashlib.sha256(appendix).hexdigest())
 
     def test_rendered_appendices_fit_the_shared_cap(self) -> None:
         document = manifest()

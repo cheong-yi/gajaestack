@@ -1,12 +1,17 @@
 {
   "name": "practice-role-sets",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "kind": "gajae-code-plugin",
   "system_appendix": [
     {
       "name": "unslop",
       "path": "appendices/system/unslop.md",
       "sha256": "4398ebd335a9da1ff7e557196f58142d72b4fa3b1377dea59fb735894030565e"
+    },
+    {
+      "name": "loc-polsia",
+      "path": "appendices/system/loc-polsia.md",
+      "sha256": "21c5c6692f7eb94823dfb248fa7b2be9aefb2e94410db0c2c324c593eb8f50f9"
     }
   ],
   "agent-appendix": [
