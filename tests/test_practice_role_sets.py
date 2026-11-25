@@ -2,7 +2,7 @@
 
 Each full copy is anchored to its git blob id. Unchanged files still match
 revision 12d587dfb20741cafc376c42c696c5f6e2a64487. Files refreshed from
-c742dd61706f use that revision's blob id. Derived bodies are compared with
+c742dd61706f or 005d8f6e8ec0 use that revision's blob id. Derived bodies are compared with
 the anchored full copy, so the test needs no network.
 """
 
@@ -59,21 +59,21 @@ AGENT_TOTAL_LIMIT = 32768
 
 # Git blob ids of upstream pstack files at the pinned revision.
 SKILL_BLOBS = {
-    "no-comments": "3b3e76295a7ad66806dcc683e4de92fb25690f8b",
-    "principle-boundary-discipline": "dfe9a6fb0e5acd6ae43a41437ee0951adfe839cb",
+    "no-comments": "1789564454c627cb8d4ee8580822d7e368cef122",
+    "principle-boundary-discipline": "95b2209ce7d15ddbca7c2bf6ef3626ffdc8d595e",
     "principle-encode-lessons-in-structure": "4a96f77fe70e36cb030f9c5efa142f66877bf58a",
-    "principle-fix-root-causes": "14fc189fa1ec3fb1614b0a3c75557f92943d8f13",
-    "principle-model-the-domain": "09b7c739955facf03f08f66e1e329745d2f8880e",
-    "principle-prove-it-works": "5dc14a3b06f9d579e5c17cd8a7242f432ddb3125",
-    "principle-sequence-verifiable-units": "986371260ebccd9a5a6818c9561e88c1d270d0ee",
+    "principle-fix-root-causes": "b5e41168eb5944f583cf1d225e39552a48473dfe",
+    "principle-model-the-domain": "88ba012f47bd51b2db0758c657610d56f871e1ba",
+    "principle-prove-it-works": "1c293b3c3ad0f7cb021858b17e7588d30a0a1acb",
+    "principle-sequence-verifiable-units": "3998185a29f287f6f30f0909c98ac4e2af5ddb97",
     "principle-subtract-before-you-add": "b8740ba6f06922d8e7ef3b23f9fb16e0fc4a876f",
-    "principle-test-behavior-not-implementation": "78c9389bfe707d6d56485ade32c59150958228f9",
-    "principle-type-system-discipline": "9fa08b0b17d536ce751fffa90134be8fb03699c7",
-    "unslop": "97f5b6412148fa5b2a2fe478836fe8923ffa5cbb",
-    "principle-attack-the-premise": "58169ff94aa56f4dd9998f4300d2b29b6f8212d0",
-    "principle-build-the-lever": "6d1cd9bbda2ceb270b52c9f253efad3bcbd0259a",
-    "principle-make-operations-idempotent": "c93f323d694a4d310515ea27165a093d399bc55e",
-    "principle-separate-before-serializing-shared-state": "ff93b4a2032c08e2232992a9a24f2891ee14e58f",
+    "principle-test-behavior-not-implementation": "094b9427aa64294afd64d83e9495a5ee303631e0",
+    "principle-type-system-discipline": "852aab0340246c0d0dfd59ea6be962ce40a31272",
+    "unslop": "583fe48499c8f8f71bd2deef4228d1f0129c03c7",
+    "principle-attack-the-premise": "5ee25b02e701ca3e304122248a412d2372ab097c",
+    "principle-build-the-lever": "8f9b5a931b10839ad5ef71ce43d5411c2c7a1f6b",
+    "principle-make-operations-idempotent": "7c61fe4b203bfae1de7db570af4c57fd0ba0a3d3",
+    "principle-separate-before-serializing-shared-state": "6a4c3b876b694097a12003996588f557d2b55d0e",
     "correct": "c45e06f48a0982ae19f92c6e83a8cd05988097a3",
     "create-verification-skill": "140d033a001e8d27acd14b06004506c43053b199",
     "maintain-verification-skill": "a2680b91fead45a0b4963d8c367a854956bea59d",
@@ -100,14 +100,14 @@ ON_DEMAND = {
 
 
 STATECHART_BLOBS = {
-    "skills/statechart/SKILL.md": "f5a64a8db4b8a5957ac5e76e051b1823cecd4d5e",
+    "skills/statechart/SKILL.md": "18d653a810dfbb3ea35a6ed88bcfe8cb84f0a893",
     "skills/statechart/references/render.md": "5ef0519d6f7ae97ef7befceaf174f94f52dd42f5",
     "skills/statechart/scripts/backends/cfg.ts": "dec8b2f6671f2d110cd880f7af8d2c714cdf23a3",
-    "skills/statechart/scripts/backends/mermaid.ts": "327220cad69baa1d4fa5aa1cfe03f3cf9e13c133",
+    "skills/statechart/scripts/backends/mermaid.ts": "21ad39cb1efe72e4507df5c7599f32596612545f",
     "skills/statechart/scripts/backends/plain-text.ts": "1ece33e8c45995493e84bc948ad613fce15481ab",
     "skills/statechart/scripts/backends/report.ts": "62e2a853375a1141491ef54fed8fd0d81a1bcd3c",
     "skills/statechart/scripts/frontends/config.ts": "4f6ade5a9a74c8e74a58125dc7a5d035ea2ca36b",
-    "skills/statechart/scripts/frontends/dot.ts": "003dfc89d4925c6aed3e59073b6a9414da78117b",
+    "skills/statechart/scripts/frontends/dot.ts": "09d5481e70d9cf911dc16ddf655c91c197ff1fac",
     "skills/statechart/scripts/frontends/marks.ts": "9b1eda59f12861b8fb981d6046741417cd1be667",
     "skills/statechart/scripts/frontends/messages.ts": "e835b065e775a1b822eede5b1515d0401ce8356b",
     "skills/statechart/scripts/frontends/spec.ts": "3fbe34f1a6b344c56cfd5afba3b90fe9a397c405",
@@ -116,6 +116,8 @@ STATECHART_BLOBS = {
     "skills/statechart/scripts/frontends/verdict.ts": "4f2ddd925332773b68918c40e62fc79a3a32571b",
     "skills/statechart/scripts/frontends/view.ts": "ed8a1b5f9f0b4104a901a966bdfd66f13102d5ce",
     "skills/statechart/scripts/ir.ts": "80fd403fe3c231b0986f239ba8c74a60b52c05f7",
+    "skills/statechart/scripts/janitor.ts": "5e69fb316c9e6bd4bc1de68781b43c345381188b",
+    "skills/statechart/scripts/kill.ts": "014d7c35049a8786359264cb4489c0c5e0a7ff1d",
     "skills/statechart/scripts/package.json": "16bd68507bac879f00d9efb90f6a5df689dbbd3a",
     "skills/statechart/scripts/passes/annotate.ts": "7d95d4fb57311c26bbbaca42eb283421f56140e0",
     "skills/statechart/scripts/passes/label.ts": "cc8c197726137a0875462702e39cd07cbf55d547",
@@ -126,9 +128,9 @@ STATECHART_BLOBS = {
     "skills/statechart/scripts/passes/region-check.ts": "ae499230f5ba441d704386bd24df73cad3c92af7",
     "skills/statechart/scripts/passes/regions.ts": "bb7aea062410be42c25c779ca748c2b52c3e5a82",
     "skills/statechart/scripts/pipeline.ts": "f12a2e07f6e4fe283cfd1b2fc0d3f83dd3d75758",
-    "skills/statechart/scripts/run.ts": "4efd368e5bcd0b4ef7cf8d8cfd1e511483c720aa",
+    "skills/statechart/scripts/run.ts": "45e13dcb4d4ee41d4437ed64e3177fe1a412ae56",
     "skills/statechart/scripts/statechart": "7d3aeb8c219bf20aea4cbc321892fca9cbd582f1",
-    "skills/statechart/scripts/statechart.ts": "4e2967e680895875d7d5352bfe997a4c08c2d1fc",
+    "skills/statechart/scripts/statechart.ts": "43ee983edfa7b1fa76ddab07e0e99cba897373b9",
     "skills/statechart/scripts/tsconfig.json": "9b16905d0a049715f942bdbe4bf3a3a80be02bad",
     "skills/statechart/scripts/worker.ts": "9559314668f6573e17db7c278d05f5776b235ebc",
 }

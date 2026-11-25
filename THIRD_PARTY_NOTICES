@@ -28,6 +28,17 @@ create-verification-skill, typescript-best-practices,
 create-formal-verification-skill, maintain-formal-verification-skill,
 in-your-own-words, and the statechart runtime. The statechart test
 corpus is not included.
+Files refreshed from 005d8f6e8ec0
+(https://github.com/cursor/plugins/tree/005d8f6e8ec057b738adcd08a08b30db0478402d/pstack)
+are no-comments, principle-attack-the-premise,
+principle-boundary-discipline, principle-build-the-lever,
+principle-fix-root-causes, principle-make-operations-idempotent,
+principle-model-the-domain, principle-prove-it-works,
+principle-separate-before-serializing-shared-state,
+principle-sequence-verifiable-units,
+principle-test-behavior-not-implementation,
+principle-type-system-discipline, unslop, and the statechart runtime,
+which now includes scripts/kill.ts and scripts/janitor.ts.
 Her later trims are taken as she wrote them. The type-system appendix
 keeps one added line, "Do not lie to the compiler." Its upstream copy
 does not include that line.

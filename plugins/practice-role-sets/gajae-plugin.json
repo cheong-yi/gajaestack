@@ -6,7 +6,7 @@
     {
       "name": "unslop",
       "path": "appendices/system/unslop.md",
-      "sha256": "4398ebd335a9da1ff7e557196f58142d72b4fa3b1377dea59fb735894030565e"
+      "sha256": "3c1e7f636524080c450afbbaa6e8a747647bda738072ae38c80a9d8ec97efe75"
     },
     {
       "name": "loc-polsia",
@@ -25,31 +25,31 @@
       "name": "principle-model-the-domain",
       "agent": "executor",
       "path": "appendices/executor/principle-model-the-domain.md",
-      "sha256": "43b4e8ad97cc0de0f070adeb2e333fa9a9d02783796b9bb9bc0d92361f18df4f"
+      "sha256": "e49dec64914555cbf8c2e1339966caf1278bac4ed6adb51d08428f846e6a97de"
     },
     {
       "name": "principle-boundary-discipline",
       "agent": "executor",
       "path": "appendices/executor/principle-boundary-discipline.md",
-      "sha256": "a8321ae8c64692ad144580dff9e3d186163fcebb85805c19124d36ff34856f65"
+      "sha256": "4199f023b7f4009c532f7ea105954345f013ec4e5a98ec6f24bc9b1bc14990ab"
     },
     {
       "name": "principle-type-system-discipline",
       "agent": "executor",
       "path": "appendices/executor/principle-type-system-discipline.md",
-      "sha256": "91bf3a8732118438c8e9fcc3b069040fc17a5ba9061c1cb6f24cf0fe5ab6187e"
+      "sha256": "23cce58843e2e8d6b5778e30d63fdb9df98a924aa211d2b2f26a09d281fb88dd"
     },
     {
       "name": "principle-test-behavior-not-implementation",
       "agent": "executor",
       "path": "appendices/executor/principle-test-behavior-not-implementation.md",
-      "sha256": "f5104476701735a3c44ea7d04a2ba96da6d6e1187e585187b08d4f579adb7c29"
+      "sha256": "bec4a1552cf3b62066fafc3962168e1f6ac6e40fdc3c7e18899235d453ed9763"
     },
     {
       "name": "principle-prove-it-works",
       "agent": "executor",
       "path": "appendices/executor/principle-prove-it-works.md",
-      "sha256": "b4e91c8e8b5a137865e3dba26048951c1caf13351e1463d0c025e05b1fafcfe1"
+      "sha256": "d85e3180befe826f8e00e51e33f5bfe31e44a1a876aa0ec13838ba614abfaa85"
     },
     {
       "name": "principle-encode-lessons-in-structure",
@@ -61,7 +61,7 @@
       "name": "principle-fix-root-causes",
       "agent": "executor",
       "path": "appendices/executor/principle-fix-root-causes.md",
-      "sha256": "7b1850ee3c514f67f9515ab79d9941c753720121a3f92a005103ac8952ac489e"
+      "sha256": "e63b9b14c49221b5bb390e273c9e242ab9fbde79868ee55fa361d7bff6e54ced"
     },
     {
       "name": "correct",
@@ -73,37 +73,37 @@
       "name": "principle-sequence-verifiable-units",
       "agent": "executor",
       "path": "appendices/executor/principle-sequence-verifiable-units.md",
-      "sha256": "937804c1b8d250eb6dfb966f4f4e7997d345568c32e93ed25c1db3fd33b21821"
+      "sha256": "e85a7c05792153f078025d69fe828d5a6cb29b4292d3e9d6fe216cdb0f36f2df"
     },
     {
       "name": "principle-attack-the-premise",
       "agent": "executor",
       "path": "appendices/executor/principle-attack-the-premise.md",
-      "sha256": "391ce1d54135f04aab61f206bd64badace1c2a10d1ad8654a58d02af4947e7f8"
+      "sha256": "dbc2757ab533d157cb4a35bb760a79e81d5d106cbcd789612c01675d40d92ca0"
     },
     {
       "name": "principle-build-the-lever",
       "agent": "executor",
       "path": "appendices/executor/principle-build-the-lever.md",
-      "sha256": "ee551cc4f6c900f90431af15ce56022266f9e4f72c772ef45df0a3d882a525ad"
+      "sha256": "0f1365c4a46423884b608d06165afd7659521bc6cc6a50df5ae6c46509cb9810"
     },
     {
       "name": "principle-make-operations-idempotent",
       "agent": "executor",
       "path": "appendices/executor/principle-make-operations-idempotent.md",
-      "sha256": "4d987ee2ff0b5ad4bbfaf067fa5a5d071c99299db3842b19f2f184c76f68eb1e"
+      "sha256": "514b494027303859e408efd52f64b4f3120f5c700a61671eb26edf7d1d8a7afd"
     },
     {
       "name": "principle-separate-before-serializing-shared-state",
       "agent": "executor",
       "path": "appendices/executor/principle-separate-before-serializing-shared-state.md",
-      "sha256": "b6abc5dbd2460ce89ae725d1532987b4d55666a439d31ffb6d34be87d6b52c31"
+      "sha256": "6d51f3a675a01444e6f7aac18403801bae2e9da721ddb9562aaec46a2ff1016d"
     },
     {
       "name": "no-comments",
       "agent": "critic",
       "path": "appendices/critic/no-comments.md",
-      "sha256": "938715f6a07fcc0b0fdbb2b2c55996496d06eecc73a269f0fcfc85c52232051b"
+      "sha256": "075e8ead8160dbd6c15680eec5f86ff0bbb47f374d1a587590d70f3f06faa1d6"
     }
   ]
 }
